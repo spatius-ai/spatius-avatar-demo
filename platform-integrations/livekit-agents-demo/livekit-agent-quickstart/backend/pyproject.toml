@@ -1,0 +1,16 @@
+[project]
+name = "livekit-agent-quickstart-backend"
+version = "0.1.0"
+requires-python = ">=3.10,<3.15"
+dependencies = [
+  "flask>=3.0.0",
+  "flask-cors>=4.0.0",
+  "python-dotenv>=1.0.0",
+  "livekit-api>=1.1.0",
+  # Pin livekit-agents to 1.5.8: livekit-plugins-spatius@1.5.8 (latest on PyPI)
+  # does not implement BaseAvatarSession.avatar_identity, which became abstract
+  # in livekit-agents>=1.5.11. Newer plugin not yet published.
+  "livekit-agents==1.5.8",
+  "livekit-plugins-google==1.5.8",
+  "livekit-plugins-spatius==1.5.8",
+]

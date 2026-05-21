@@ -1,0 +1,33 @@
+# Get Spatius App ID:
+# https://app.spatius.ai/apps
+SPATIUS_APP_ID=your_spatius_app_id
+
+# Get Spatius Avatar ID (test avatar):
+# https://app.spatius.ai/avatars/library
+SPATIUS_AVATAR_ID=93dd60f8-d9e2-47cf-973e-d75e10cfc951
+
+# Spatius region (currently only `us-west` is available).
+# Region guide: https://docs.spatius.ai/api-reference/regions
+SPATIUS_REGION=us-west
+
+# Get OpenAI API Key:
+# https://platform.openai.com/api-keys
+OPENAI_API_KEY=sk-your_openai_api_key
+OPENAI_BASE_URL=https://api.openai.com
+OPENAI_USE_PROXY=false
+OPENAI_PROXY_BASE_URL=http://10.0.2.2:8090
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_STT_MODEL=gpt-4o-mini-transcribe
+OPENAI_STT_LANGUAGE=en
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=alloy
+
+# Local VAD parameters
+VAD_START_THRESHOLD=0.03
+VAD_STOP_THRESHOLD=0.02
+VAD_SILENCE_MS=700
+VAD_MIN_SPEECH_MS=280
+VAD_MAX_SPEECH_MS=8000
+
+# Microphone sample rate for ASR (recommended: 16000)
+MIC_SAMPLE_RATE=16000
