@@ -46,6 +46,8 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var currentAvatarId: String by mutableStateOf("")
         private set
+    var configuredAvatarId: String by mutableStateOf("")
+        private set
 
     // --- Controller state ---
     var connectionState: ConnectionState by mutableStateOf(ConnectionState.Disconnected)
@@ -78,7 +80,8 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
 
     private val okHttpClient = OkHttpClient()
 
-    fun initialize(appId: String, region: String = "us-west") {
+    fun initialize(appId: String, avatarId: String = "", region: String = "us-west") {
+        configuredAvatarId = avatarId
         AvatarSDK.initialize(
             getApplication(),
             appId,
@@ -99,14 +102,20 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
         isLoading = true
         loadProgress = 0f
         viewModelScope.launch {
-            AvatarManager.load(avatarId, onProgress = { progress ->
-                when (progress) {
-                    is AvatarManager.LoadProgress.Downloading -> loadProgress = progress.progress
-                    is AvatarManager.LoadProgress.Completed -> loadProgress = 1f
-                    is AvatarManager.LoadProgress.Failed -> {}
-                }
-            })
-            isLoading = false
+            try {
+                AvatarManager.load(avatarId, onProgress = { progress ->
+                    when (progress) {
+                        is AvatarManager.LoadProgress.Downloading -> loadProgress = progress.progress
+                        is AvatarManager.LoadProgress.Completed -> loadProgress = 1f
+                        is AvatarManager.LoadProgress.Failed -> errorState = progress.error
+                    }
+                })
+            } catch (error: Throwable) {
+                errorState = error
+                currentAvatarId = ""
+            } finally {
+                isLoading = false
+            }
         }
     }
 

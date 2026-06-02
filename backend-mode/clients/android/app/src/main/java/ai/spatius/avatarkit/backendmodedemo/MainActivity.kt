@@ -35,8 +35,8 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable("config_check") {
                             ConfigCheckScreen(
-                                onReady = { appId, region ->
-                                    viewModel.initialize(appId, region)
+                                onReady = { appId, avatarId, region ->
+                                    viewModel.initialize(appId, avatarId, region)
                                     navController.navigate("playground") {
                                         popUpTo("config_check") { inclusive = true }
                                     }

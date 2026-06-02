@@ -89,6 +89,14 @@ fun PlaygroundScreen(
         viewModel.loadAvatar(id)
     }
 
+    val characters = remember(viewModel.configuredAvatarId) {
+        if (viewModel.configuredAvatarId.isBlank()) {
+            defaultCharacters
+        } else {
+            listOf(AvatarCharacter(viewModel.configuredAvatarId, "Configured")) + defaultCharacters
+        }
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         // 1. Avatar view
         if (viewModel.currentAvatarId.isNotEmpty()) {
@@ -237,7 +245,7 @@ fun PlaygroundScreen(
                 }
                 Spacer(Modifier.height(4.dp))
 
-                defaultCharacters.forEach { character ->
+                characters.forEach { character ->
                     CharacterItem(
                         character = character,
                         isSelected = selectedCharacterId == character.id,

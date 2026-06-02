@@ -50,13 +50,14 @@ private data class ServerCheckResult(
     val allConfigured: Boolean,
     val missing: List<String>,
     val appId: String,
+    val avatarId: String,
     val region: String,
     val error: String?,
 )
 
 @Composable
 fun ConfigCheckScreen(
-    onReady: (appId: String, region: String) -> Unit,
+    onReady: (appId: String, avatarId: String, region: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val backendUrl = BuildConfig.BACKEND_MODE_URL
@@ -70,7 +71,7 @@ fun ConfigCheckScreen(
         if (!clientReady) {
             serverResult = ServerCheckResult(
                 reachable = false, allConfigured = false, missing = emptyList(),
-                appId = "", region = "", error = "BACKEND_MODE_URL not configured",
+                appId = "", avatarId = "", region = "", error = "BACKEND_MODE_URL not configured",
             )
             checking = false
             return@LaunchedEffect
@@ -83,7 +84,7 @@ fun ConfigCheckScreen(
         } catch (e: Exception) {
             serverResult = ServerCheckResult(
                 reachable = false, allConfigured = false, missing = emptyList(),
-                appId = "", region = "", error = e.message,
+                appId = "", avatarId = "", region = "", error = e.message,
             )
         }
         checking = false
@@ -221,7 +222,7 @@ fun ConfigCheckScreen(
                 Text("Recheck")
             }
             Button(
-                onClick = { serverResult?.let { onReady(it.appId, it.region) } },
+                onClick = { serverResult?.let { onReady(it.appId, it.avatarId, it.region) } },
                 enabled = allReady,
                 modifier = Modifier.weight(1f),
             ) {
@@ -289,7 +290,7 @@ private fun checkServer(backendUrl: String): ServerCheckResult {
     if (!ok) {
         return ServerCheckResult(
             reachable = true, allConfigured = false, missing = missing,
-            appId = "", region = "", error = null,
+            appId = "", avatarId = "", region = "", error = null,
         )
     }
 
@@ -299,10 +300,11 @@ private fun checkServer(backendUrl: String): ServerCheckResult {
     val configBody = configResp.body?.string() ?: throw Exception("Empty response from /api/config")
     val configJson = JSONObject(configBody)
     val appId = configJson.optString("appId", "")
+    val avatarId = configJson.optString("avatarId", "")
     val region = configJson.optString("region", "us-west")
 
     return ServerCheckResult(
         reachable = true, allConfigured = true, missing = emptyList(),
-        appId = appId, region = region, error = null,
+        appId = appId, avatarId = avatarId, region = region, error = null,
     )
 }

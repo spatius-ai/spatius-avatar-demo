@@ -2,14 +2,27 @@
 
 from __future__ import annotations
 
+import io
+import wave
+
 import httpx
 
 from app.config import Settings
 
 
 async def run_asr(settings: Settings, audio_bytes: bytes) -> str:
-    """Transcribe audio using Deepgram (or compatible ASR API)."""
+    """Transcribe raw PCM16 mic audio."""
     base = settings.asr_base_url.rstrip("/")
+    if "api.openai.com" in base or settings.asr_model.startswith("whisper"):
+        return await _run_openai_asr(settings, audio_bytes, base)
+    return await _run_deepgram_asr(settings, audio_bytes, base)
+
+
+async def _run_deepgram_asr(
+    settings: Settings,
+    audio_bytes: bytes,
+    base: str,
+) -> str:
     sample_rate = settings.user_input_sample_rate
     endpoint = (
         f"{base}/v1/listen"
@@ -42,6 +55,39 @@ async def run_asr(settings: Settings, audio_bytes: bytes) -> str:
         .strip()
     )
     return transcript
+
+
+async def _run_openai_asr(
+    settings: Settings,
+    audio_bytes: bytes,
+    base: str,
+) -> str:
+    wav_buffer = io.BytesIO()
+    with wave.open(wav_buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(settings.user_input_sample_rate)
+        wav.writeframes(audio_bytes)
+    wav_buffer.seek(0)
+
+    async with httpx.AsyncClient(timeout=40.0) as client:
+        resp = await client.post(
+            f"{base}/audio/transcriptions",
+            headers={
+                "Authorization": f"Bearer {settings.asr_api_key}",
+            },
+            data={
+                "model": settings.asr_model,
+            },
+            files={
+                "file": ("microphone.wav", wav_buffer.getvalue(), "audio/wav"),
+            },
+        )
+
+    if resp.status_code >= 400:
+        raise RuntimeError(f"ASR failed ({resp.status_code}): {resp.text}")
+
+    return resp.json().get("text", "").strip()
 
 
 async def run_llm(settings: Settings, user_text: str) -> str:

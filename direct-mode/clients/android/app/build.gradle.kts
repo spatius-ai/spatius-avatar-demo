@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,10 +7,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val localProperties = java.util.Properties().apply {
+val localProperties = Properties()
+run {
     val file = rootProject.file("local.properties")
     if (file.exists()) {
-        file.inputStream().use(::load)
+        file.inputStream().use { localProperties.load(it) }
     }
 }
 
