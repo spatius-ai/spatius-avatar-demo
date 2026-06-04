@@ -30,17 +30,27 @@ flowchart LR
 
 - [Spatius credentials](https://app.spatius.ai/apps) (App ID + Session Token)
 
+## Token servers
+
+Direct Mode clients connect to Motion Server directly, but they must not hold `SPATIUS_API_KEY`. Use a small backend endpoint to exchange your server-side API Key for a short-lived Session Token, then pass that Session Token to the client.
+
+The examples in `servers/python`, `servers/nodejs`, and `servers/go` are token servers only. They do not run ASR, LLM, or TTS; they do not connect to Motion Server; and they do not transport audio or motion data. For that runtime-server architecture, use [Backend Mode](../backend-mode/).
+
 ## Quick Start
 
 ### Web quickstart
 
 ```bash
-cd clients/web/speech-to-avatar-quickstart
+cd clients/web/quickstart
 pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`, enter your App ID, Avatar ID, and Session Token, then stream the bundled PCM audio to see the avatar speak.
+Open `http://localhost:3000`, fill `.env` with App ID, Avatar ID, and Session Token, then use **Sample audio** to stream the bundled PCM file and see the avatar speak.
+
+The same quickstart also includes an optional **Realtime conversation** mode. Fill one provider section in `.env`, restart the dev server, select **Realtime conversation**, and the demo captures microphone audio, sends it to the selected realtime provider, and streams the assistant PCM output into AvatarKit.
+
+This quickstart includes OpenAI Realtime and Gemini Live WebSocket adapters. Other realtime providers, such as Azure OpenAI Realtime, can be used by adapting their live audio output into PCM16 chunks.
 
 Multi-framework Web reference clients live under `clients/web/reference/`: `react/`, `vue/`, `vanilla/`, `nextjs-direct/`, and `nextjs-iframe/`.
 
@@ -63,7 +73,7 @@ Open `AvatarDemo.xcodeproj` in Xcode. Enter App ID and Session Token, select a c
 direct-mode/
 ├── clients/
 │   ├── web/
-│   │   ├── speech-to-avatar-quickstart/
+│   │   ├── quickstart/
 │   │   └── reference/
 │   │       ├── react/
 │   │       ├── vue/
@@ -82,13 +92,9 @@ direct-mode/
 
 ## Extending with Real-Time Conversation
 
-These demos use pre-recorded audio files to drive the avatar. To build a full voice conversation, replace the audio source with your own AI pipeline:
+The [`clients/web/quickstart`](./clients/web/quickstart) demo shows the smallest browser-only version: microphone PCM goes to a realtime model, assistant PCM comes back, and AvatarKit sends that audio to Motion Server for lip sync.
 
-```typescript
-// Instead of loading a PCM file:
-const pcm = await yourTTS.synthesize(text)
-controller.send(pcm.buffer, true)
-```
+For production, keep long-lived realtime provider keys on your backend and mint short-lived browser tokens.
 
 ## References
 
