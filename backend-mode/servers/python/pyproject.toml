@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Python WebSocket backend for the Spatius Backend Mode demo (ASR → LLM → TTS pipeline)"
 requires-python = ">=3.11"
 dependencies = [
-  "spatius>=1.0.0,<2.0.0",
+  "spatius>=1.0.2,<2.0.0",
   "fastapi>=0.115,<1.0",
   "httpx>=0.28,<1.0",
   "python-dotenv>=1.0,<2.0",

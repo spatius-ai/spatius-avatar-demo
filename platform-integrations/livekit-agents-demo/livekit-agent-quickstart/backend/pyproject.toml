@@ -7,10 +7,9 @@ dependencies = [
   "flask-cors>=4.0.0",
   "python-dotenv>=1.0.0",
   "livekit-api>=1.1.0",
-  # Pin livekit-agents to 1.5.8: livekit-plugins-spatius@1.5.8 (latest on PyPI)
-  # does not implement BaseAvatarSession.avatar_identity, which became abstract
-  # in livekit-agents>=1.5.11. Newer plugin not yet published.
-  "livekit-agents==1.5.8",
-  "livekit-plugins-google==1.5.8",
-  "livekit-plugins-spatius==1.5.8",
+  # Keep livekit-agents, livekit-plugins-google, and livekit-plugins-spatius
+  # pinned together so the avatar plugin tracks the matching agents release.
+  "livekit-agents==1.5.17",
+  "livekit-plugins-google==1.5.17",
+  "livekit-plugins-spatius==1.5.17",
 ]
