@@ -5,7 +5,6 @@
   <a href="https://central.sonatype.com/artifact/ai.spatius/avatarkit"><img src="https://img.shields.io/maven-central/v/ai.spatius/avatarkit?label=Maven%20Central&color=0ea5e9" alt="Maven Central" /></a>
   <a href="https://github.com/spatius-ai/avatarkit-ios-release/releases"><img src="https://img.shields.io/github/v/release/spatius-ai/avatarkit-ios-release?label=iOS&color=0ea5e9" alt="iOS" /></a>
   <br/>
-  <a href="#license"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <a href="https://docs.spatius.ai/"><img src="https://img.shields.io/badge/docs-spatius.ai-blue" alt="Docs" /></a>
 </p>
 
@@ -112,7 +111,3 @@ You will also need:
 - [Studio](https://app.spatius.ai/) — Manage apps, avatars, and API keys
 - [Playground](https://playground.spatius.ai/) — Try avatars in the browser
 - [Documentation](https://docs.spatius.ai/) — Guides and API reference
-
-## License
-
-MIT
