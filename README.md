@@ -61,13 +61,13 @@
 | **Android** | [`direct-mode/clients/android`](./direct-mode/clients/android) | [`backend-mode/clients/android`](./backend-mode/clients/android) | Not provided today; current Spatius AvatarKit RTC demo path is Web-only |
 | **Flutter** | [`direct-mode/clients/flutter`](./direct-mode/clients/flutter) | [`backend-mode/clients/flutter`](./backend-mode/clients/flutter) | Not provided today; current Spatius AvatarKit RTC demo path is Web-only |
 
-Transport options such as LiveKit, future Agora support, and your own WebSocket transport live inside the relevant integration docs. [`platform-integrations/livekit-room-demo`](./platform-integrations/livekit-room-demo) is the minimal LiveKit example for `@spatius/avatarkit-rtc` (the RTC Adapter) with `LiveKitProvider`: it validates token issuance, room connection, adapter init, avatar load, and mic publishing. Remote audio playback and motion rendering only happen when a producer publishes into the room — this demo has no agent or Backend Mode publisher. Not the full Backend Mode + RTC transport voice-agent demo.
+Transport options such as LiveKit, Agora, and your own WebSocket transport live inside the relevant integration docs. [`platform-integrations/livekit-room-demo`](./platform-integrations/livekit-room-demo) is the minimal LiveKit example for `@spatius/avatarkit-rtc` (the RTC Adapter) with `LiveKitProvider`: it validates token issuance, room connection, adapter init, avatar load, and mic publishing. Remote audio playback and motion rendering only happen when a producer publishes into the room — this demo has no agent or Backend Mode publisher. Not the full Backend Mode + RTC transport voice-agent demo.
 
 ### Direct Mode token servers vs Backend Mode servers
 
 Direct Mode clients connect to Motion Server directly, but they still need a short-lived Session Token. The examples under `direct-mode/servers/` are token servers only: they keep `SPATIUS_API_KEY` on the backend and mint Session Tokens for clients. They do not run ASR, LLM, TTS, Motion Server connections, or audio / motion relay.
 
-Backend Mode servers are runtime servers. They own the ASR / LLM / TTS pipeline, use the Spatius Server SDK to connect to Motion Server, and deliver encoded audio + motion messages to clients.
+Backend Mode servers are runtime servers. They own the ASR / LLM / TTS pipeline, use a Server SDK to connect to Motion Server, and deliver encoded audio + motion messages to clients.
 
 ## Quick Start
 
