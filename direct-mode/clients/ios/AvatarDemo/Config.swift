@@ -4,6 +4,7 @@ enum Config {
     // MARK: - Spatius
     static let appID = "your_spatius_app_id"
     static let avatarID = "your_spatius_avatar_id"
+    static let region = "us-west"
 
     // MARK: - OpenAI (demo only, same keys as the web client)
     static let openAIApiKey = "sk-your_openai_api_key"  // fill in or pass from backend

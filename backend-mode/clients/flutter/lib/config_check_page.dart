@@ -97,7 +97,7 @@ class _ConfigCheckPageState extends State<ConfigCheckPage> {
       configuration: Configuration(
         region: region,
         audioFormat: const AudioFormat(sampleRate: 16000),
-        drivingServiceMode: DrivingServiceMode.host,
+        drivingServiceMode: DrivingServiceMode.backend,
         logLevel: LogLevel.all,
       ),
     );

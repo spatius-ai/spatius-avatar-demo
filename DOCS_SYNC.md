@@ -17,11 +17,13 @@ This repository and the public docs must be updated together. Demo paths should 
 - If a demo path, run command, required env var, package name, default endpoint, or avatar ID changes, update the matching docs page in `../docs`.
 - If a docs guide introduces a new recommended flow, add or update the matching demo README in this repository.
 - Keep `direct-mode/clients/web/quickstart` positioned as the Web Direct Mode quickstart: bundled sample audio first, optional realtime conversation in the same UI.
-- Keep package examples on compatible latest ranges where the package manager supports it:
-  - npm: `^1.0.0`
+- Keep package examples aligned with the current official SDK releases:
+  - npm: `@spatius/avatarkit@^1.2.0`, `@spatius/avatarkit-rtc@^1.1.0`
   - Python: `>=1.0.0,<2.0.0` or the current LiveKit-compatible `>=1.5.8,<2.0.0`
-  - Android: `1.+`
-- Do not commit local lockfiles for demo dependency resolution. Fresh installs should resolve the latest compatible SDK package.
+  - Android: `ai.spatius:avatarkit:1.2.0`
+  - Flutter: `spatius: 1.2.0`
+- Do not use `*-compat` SDK artifacts in these demos unless a migration guide explicitly calls for compatibility testing.
+- Do not commit local lockfiles for demo dependency resolution. Fresh installs should resolve the intended official SDK package line.
 - Keep the bundled quickstart PCM sample file available at `direct-mode/clients/web/quickstart/public/quickstart_voice.pcm`.
 
 ## Verification Checklist

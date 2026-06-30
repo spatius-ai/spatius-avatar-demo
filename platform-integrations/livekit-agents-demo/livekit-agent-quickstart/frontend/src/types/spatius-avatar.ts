@@ -20,7 +20,7 @@ export interface SpatiusAvatarConnection {
 interface SpatiusAvatarSdkOptions {
   appId: string
   avatarId: string
-  characterApiBaseUrl?: string
+  customEndpoint?: string
   drivingServiceMode?: DrivingServiceMode
   region?: string
   sessionToken?: string

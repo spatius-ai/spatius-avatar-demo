@@ -23,7 +23,7 @@ Aligned with iOS:
 
 ## SDK Version
 
-- Android AvatarKit: `ai.spatius:avatarkit:1.+`
+- Android AvatarKit: `ai.spatius:avatarkit:1.2.0`
 
 ## Stage Background
 

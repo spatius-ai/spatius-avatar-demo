@@ -173,7 +173,7 @@ final class AvatarViewModel: ObservableObject {
                         level: .error
                     )
                     self.pushLog(
-                        "Also verify token expiration, AppID match (\(Config.appID)), and us-west region.",
+                        "Also verify token expiration, AppID match (\(Config.appID)), and \(Config.region) region.",
                         level: .error
                     )
                 }
@@ -213,9 +213,9 @@ final class AvatarViewModel: ObservableObject {
             AvatarSDK.initialize(
                 appID: Config.appID,
                 configuration: Configuration(
-                    region: "us-west",
+                    region: Config.region,
                     audioFormat: AudioFormat(sampleRate: Config.avatarSampleRate),
-                    drivingServiceMode: .sdk,
+                    drivingServiceMode: .direct,
                     logLevel: .warning
                 )
             )

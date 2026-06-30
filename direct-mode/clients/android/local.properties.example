@@ -6,7 +6,7 @@ SPATIUS_APP_ID=your_spatius_app_id
 # https://app.spatius.ai/avatars/library
 SPATIUS_AVATAR_ID=93dd60f8-d9e2-47cf-973e-d75e10cfc951
 
-# Spatius region (currently only `us-west` is available).
+# Spatius region. Supported values: `us-west`, `ap-northeast`, `cn-beijing`.
 # Region guide: https://docs.spatius.ai/api-reference/regions
 SPATIUS_REGION=us-west
 

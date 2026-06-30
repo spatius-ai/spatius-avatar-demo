@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_SPATIUS_APP_ID: string
   readonly VITE_SPATIUS_AVATAR_ID: string
+  readonly VITE_SPATIUS_REGION?: 'us-west' | 'ap-northeast' | 'cn-beijing'
   readonly VITE_OPENAI_API_KEY: string
   readonly VITE_OPENAI_MODEL?: string
   readonly VITE_OPENAI_STT_MODEL?: string

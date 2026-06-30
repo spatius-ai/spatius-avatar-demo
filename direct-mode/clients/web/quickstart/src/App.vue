@@ -14,14 +14,17 @@ import {
   MicrophonePcmRecorder,
   resamplePcm16Mono,
 } from './audio'
+import { DoubaoRealtimeClient } from './doubaoRealtime'
 import { GeminiLiveClient } from './geminiLive'
 import { OpenAIRealtimeClient } from './openaiRealtime'
 import type { RealtimeClient, RealtimeHandlers } from './realtimeClient'
 
 type AudioSource = 'sample' | 'realtime'
+type SpatiusRegion = 'us-west' | 'ap-northeast' | 'cn-beijing'
 
 const CONNECTION_TIMEOUT_MS = 15_000
 const QUICKSTART_AUDIO_URL = '/quickstart_voice.pcm'
+const SUPPORTED_REGIONS = ['us-west', 'ap-northeast', 'cn-beijing'] as const
 
 const container = ref<HTMLDivElement | null>(null)
 const audioSource = ref<AudioSource>('sample')
@@ -43,6 +46,7 @@ let pendingAvatarAudio: ArrayBuffer | null = null
 const appId = import.meta.env.VITE_SPATIUS_APP_ID ?? ''
 const avatarId = import.meta.env.VITE_SPATIUS_AVATAR_ID ?? ''
 const sessionToken = import.meta.env.VITE_SPATIUS_SESSION_TOKEN ?? ''
+const spatiusRegion = readSpatiusRegion(import.meta.env.VITE_SPATIUS_REGION)
 const realtimeProvider = (import.meta.env.VITE_REALTIME_PROVIDER || 'openai').toLowerCase()
 const openAIRealtimeToken = import.meta.env.VITE_OPENAI_REALTIME_TOKEN ?? ''
 const openAIRealtimeModel = import.meta.env.VITE_OPENAI_REALTIME_MODEL || 'gpt-realtime'
@@ -50,15 +54,22 @@ const realtimeVoice = import.meta.env.VITE_OPENAI_REALTIME_VOICE || 'marin'
 const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY ?? ''
 const geminiModel = import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025'
 const geminiApiVersion = (import.meta.env.VITE_GEMINI_API_VERSION || 'v1alpha') as 'v1alpha' | 'v1beta'
+const doubaoModel = import.meta.env.VITE_DOUBAO_E2E_MODEL || 'O'
+const doubaoSpeaker = import.meta.env.VITE_DOUBAO_E2E_SPEAKER || 'zh_female_vv_jupiter_bigtts'
 const realtimeInstructions =
   import.meta.env.VITE_REALTIME_INSTRUCTIONS ||
   import.meta.env.VITE_OPENAI_REALTIME_INSTRUCTIONS ||
   import.meta.env.VITE_GEMINI_INSTRUCTIONS ||
+  import.meta.env.VITE_DOUBAO_E2E_INSTRUCTIONS ||
   'You are a concise, friendly avatar assistant. Keep replies short enough for a realtime demo.'
 
 function isMissingEnv(value: string): boolean {
   const trimmed = value.trim()
   return trimmed.length === 0 || trimmed.startsWith('your_')
+}
+
+function readSpatiusRegion(value: string | undefined): SpatiusRegion {
+  return SUPPORTED_REGIONS.includes(value as SpatiusRegion) ? (value as SpatiusRegion) : 'us-west'
 }
 
 const isRealtimeMode = computed(() => audioSource.value === 'realtime')
@@ -70,6 +81,7 @@ const sourceLabel = computed(() => {
 const realtimeModelLabel = computed(() => {
   if (realtimeProvider === 'gemini') return `gemini · ${geminiModel}`
   if (realtimeProvider === 'openai') return `openai · ${openAIRealtimeModel}`
+  if (realtimeProvider === 'doubao') return `doubao · ${doubaoModel}`
   return realtimeProvider
 })
 
@@ -87,8 +99,10 @@ const missingRealtimeConfig = computed(() => {
     if (isMissingEnv(geminiApiKey)) missing.push('VITE_GEMINI_API_KEY')
   } else if (realtimeProvider === 'openai') {
     if (isMissingEnv(openAIRealtimeToken)) missing.push('VITE_OPENAI_REALTIME_TOKEN')
+  } else if (realtimeProvider === 'doubao') {
+    // Doubao E2E credentials are read by the local Vite proxy, not the browser bundle.
   } else {
-    missing.push('VITE_REALTIME_PROVIDER must be openai or gemini')
+    missing.push('VITE_REALTIME_PROVIDER must be openai, gemini, or doubao')
   }
   return missing
 })
@@ -167,8 +181,8 @@ async function connectAvatar(): Promise<void> {
 
     if (!AvatarSDK.configuration) {
       await AvatarSDK.initialize(appId, {
-        region: 'us-west',
-        drivingServiceMode: DrivingServiceMode.sdk,
+        region: spatiusRegion,
+        drivingServiceMode: DrivingServiceMode.direct,
         audioFormat: {
           channelCount: 1,
           sampleRate: AVATAR_INPUT_SAMPLE_RATE,
@@ -252,6 +266,15 @@ async function connectRealtime(): Promise<void> {
           model: geminiModel,
           instructions: realtimeInstructions,
           apiVersion: geminiApiVersion,
+        },
+        handlers
+      )
+    } else if (realtimeProvider === 'doubao') {
+      realtimeClient = new DoubaoRealtimeClient(
+        {
+          instructions: realtimeInstructions,
+          model: doubaoModel,
+          speaker: doubaoSpeaker,
         },
         handlers
       )

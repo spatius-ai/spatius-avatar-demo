@@ -210,7 +210,7 @@ class MainActivity : ComponentActivity() {
                 Configuration(
                     region = parseRegion(BuildConfig.SPATIUS_REGION),
                     audioFormat = AudioFormat(24000),
-                    drivingServiceMode = DrivingServiceMode.SDK,
+                    drivingServiceMode = DrivingServiceMode.DIRECT,
                     logLevel = LogLevel.INFO,
                 ),
             )
@@ -317,8 +317,10 @@ class MainActivity : ComponentActivity() {
 
     private fun parseRegion(raw: String): String {
         return when (raw.lowercase(Locale.US)) {
-            "" -> "us-west"
-            else -> raw.lowercase(Locale.US)
+            "", "us-west" -> "us-west"
+            "ap-northeast" -> "ap-northeast"
+            "cn-beijing" -> "cn-beijing"
+            else -> "us-west"
         }
     }
 

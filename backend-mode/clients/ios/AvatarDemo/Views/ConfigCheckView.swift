@@ -155,7 +155,7 @@ struct ConfigCheckView: View {
                 configuration: Configuration(
                     region: region,
                     audioFormat: AudioFormat(sampleRate: 16000),
-                    drivingServiceMode: .host,
+                    drivingServiceMode: .backend,
                     logLevel: .all
                 )
             )

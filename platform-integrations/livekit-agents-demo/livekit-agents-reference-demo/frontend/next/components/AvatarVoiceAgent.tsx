@@ -6,7 +6,7 @@ import {
   AvatarSDK,
   AvatarView,
   DrivingServiceMode,
-  } from "@spatius/avatarkit";
+} from "@spatius/avatarkit";
 import { AvatarPlayer, LiveKitProvider } from "@spatius/avatarkit-rtc";
 import { Room, RoomEvent, Track } from "livekit-client";
 import AudioVisualizer from "./AudioVisualizer";
@@ -21,9 +21,17 @@ interface AvatarVoiceAgentProps {
   onDisconnect: () => void;
 }
 
+type SpatiusRegion = "us-west" | "ap-northeast" | "cn-beijing";
+const SUPPORTED_REGIONS: readonly SpatiusRegion[] = [
+  "us-west",
+  "ap-northeast",
+  "cn-beijing",
+];
+
 function readSpatiusConfig() {
   const appId = process.env.NEXT_PUBLIC_SPATIUS_APP_ID;
   const avatarId = process.env.NEXT_PUBLIC_SPATIUS_AVATAR_ID;
+  const region = process.env.NEXT_PUBLIC_SPATIUS_REGION;
 
   if (!appId || !avatarId) {
     throw new Error(
@@ -34,7 +42,9 @@ function readSpatiusConfig() {
   return {
     appId,
     avatarId,
-    region: 'us-west',
+    region: SUPPORTED_REGIONS.includes(region as SpatiusRegion)
+      ? (region as SpatiusRegion)
+      : "us-west",
   };
 }
 
@@ -192,7 +202,7 @@ export default function AvatarVoiceAgent({
       if (!AvatarSDK.configuration) {
         await AvatarSDK.initialize(config.appId, {
           region: config.region,
-          drivingServiceMode: DrivingServiceMode.host,
+          drivingServiceMode: DrivingServiceMode.backend,
         });
       }
 

@@ -9,7 +9,7 @@
   <text x="439" y="116" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" fill="#444">AvatarKit SDK</text>
 
   <rect x="765" y="19" width="227" height="102" fill="#F1EDFF" stroke="#8B5CF6"/>
-  <text x="878.5" y="78" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" fill="#444">AvatarKit Server</text>
+  <text x="878.5" y="78" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" fill="#444">Motion Server</text>
 
   <rect x="771" y="168" width="222" height="87" fill="#F1EDFF" stroke="#8B5CF6"/>
   <text x="882" y="220" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" fill="#444">Avatar Rendering</text>

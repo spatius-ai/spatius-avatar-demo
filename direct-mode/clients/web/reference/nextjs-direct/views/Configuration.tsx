@@ -4,11 +4,12 @@ import { useState } from 'react'
 import {
   AvatarSDK,
   DrivingServiceMode,
-    LogLevel,
+  LogLevel,
 } from '@spatius/avatarkit'
 import type { AppConfig } from '@/app/page'
 
 const DASH_URL = 'https://app.spatius.ai'
+const SUPPORTED_REGIONS = ['us-west', 'ap-northeast', 'cn-beijing'] as const
 
 interface Props {
   onInitialized: (config: AppConfig) => void
@@ -31,7 +32,7 @@ function saveCache(appId: string, token: string, env: string) {
 }
 
 function normalizeRegion(env?: string) {
-  return env === 'us-west' ? 'us-west' : 'us-west'
+  return env && SUPPORTED_REGIONS.includes(env as (typeof SUPPORTED_REGIONS)[number]) ? env : 'us-west'
 }
 
 export default function Configuration({ onInitialized }: Props) {
@@ -51,7 +52,7 @@ export default function Configuration({ onInitialized }: Props) {
     try {
       await AvatarSDK.initialize(appId.trim(), {
         region: env,
-        drivingServiceMode: DrivingServiceMode.sdk,
+        drivingServiceMode: DrivingServiceMode.direct,
         audioFormat: { channelCount: 1, sampleRate: 16000 },
         logLevel: LogLevel.all,
       })
@@ -93,7 +94,9 @@ export default function Configuration({ onInitialized }: Props) {
             <div className="field">
               <label>Region</label>
               <select value={env} onChange={e => setEnv(e.target.value as string)}>
-                <option value={'us-west'}>us-west</option>
+                {SUPPORTED_REGIONS.map(region => (
+                  <option key={region} value={region}>{region}</option>
+                ))}
               </select>
             </div>
 

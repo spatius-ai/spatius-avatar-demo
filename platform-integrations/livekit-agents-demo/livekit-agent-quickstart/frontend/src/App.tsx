@@ -25,6 +25,9 @@ type TokenResponse = {
   room: string
 }
 
+type SpatiusRegion = 'us-west' | 'ap-northeast' | 'cn-beijing'
+const SUPPORTED_REGIONS: readonly SpatiusRegion[] = ['us-west', 'ap-northeast', 'cn-beijing']
+
 function AvatarPanel({ onExit }: { onExit: () => void }) {
   const avatar = useSpatiusAvatarContext()
   const [pending, setPending] = useState(false)
@@ -99,6 +102,9 @@ function AvatarPanel({ onExit }: { onExit: () => void }) {
 export default function App() {
   const appId = import.meta.env.VITE_SPATIUS_APP_ID
   const avatarId = import.meta.env.VITE_SPATIUS_AVATAR_ID
+  const region = SUPPORTED_REGIONS.includes(import.meta.env.VITE_SPATIUS_REGION as SpatiusRegion)
+    ? (import.meta.env.VITE_SPATIUS_REGION as SpatiusRegion)
+    : 'us-west'
   const tokenEndpoint = import.meta.env.VITE_TOKEN_ENDPOINT || '/token'
   const roomName = import.meta.env.VITE_ROOM_NAME || 'voice-agent-room'
 
@@ -152,6 +158,7 @@ export default function App() {
         <SpatiusAvatarProvider
           appId={appId}
           avatarId={avatarId}
+          region={region}
           connection={connection}
           onConnected={() => setStatus('Connected. Click Enable Mic to talk.')}
           onDisconnected={() => setStatus('Disconnected')}

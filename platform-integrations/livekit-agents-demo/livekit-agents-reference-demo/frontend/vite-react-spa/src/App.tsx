@@ -24,6 +24,13 @@ type AvatarVoiceAgentProps = ConnectionInfo & {
   onDisconnect: () => void;
 };
 
+type SpatiusRegion = "us-west" | "ap-northeast" | "cn-beijing";
+const SUPPORTED_REGIONS: readonly SpatiusRegion[] = [
+  "us-west",
+  "ap-northeast",
+  "cn-beijing",
+];
+
 const SessionConversation = () => (
   <AgentChatTranscript
     className="h-full"
@@ -132,6 +139,11 @@ function AvatarVoiceAgent({
     <SpatiusAvatarProvider
       appId={import.meta.env.VITE_SPATIUS_APP_ID}
       avatarId={import.meta.env.VITE_SPATIUS_AVATAR_ID}
+      region={
+        SUPPORTED_REGIONS.includes(import.meta.env.VITE_SPATIUS_REGION as SpatiusRegion)
+          ? (import.meta.env.VITE_SPATIUS_REGION as SpatiusRegion)
+          : "us-west"
+      }
       connection={{ url, token, roomName: room }}
       onDisconnect={onDisconnect}
     >

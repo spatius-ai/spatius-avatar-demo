@@ -2,6 +2,7 @@ export const AVATAR_INPUT_SAMPLE_RATE = 16_000
 export const REALTIME_OUTPUT_SAMPLE_RATE = 24_000
 export const OPENAI_INPUT_SAMPLE_RATE = 24_000
 export const GEMINI_INPUT_SAMPLE_RATE = 16_000
+export const DOUBAO_INPUT_SAMPLE_RATE = 16_000
 
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)

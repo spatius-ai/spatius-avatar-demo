@@ -1,7 +1,7 @@
 import {
   AvatarSDK,
   DrivingServiceMode,
-    LogLevel,
+  LogLevel,
 } from '@spatius/avatarkit'
 
 export interface AppConfig {
@@ -11,6 +11,7 @@ export interface AppConfig {
 }
 
 const DASH_URL = 'https://app.spatius.ai'
+const SUPPORTED_REGIONS = ['us-west', 'ap-northeast', 'cn-beijing'] as const
 const STORAGE_KEY = 'avatarkit-playground-config'
 
 function loadCached() {
@@ -26,7 +27,7 @@ function saveCache(appId: string, token: string, env: string) {
 }
 
 function normalizeRegion(env?: string) {
-  return env === 'us-west' ? 'us-west' : 'us-west'
+  return env && SUPPORTED_REGIONS.includes(env as (typeof SUPPORTED_REGIONS)[number]) ? env : 'us-west'
 }
 
 export function createConfiguration(
@@ -60,7 +61,9 @@ export function createConfiguration(
             <div class="field">
               <label>Region</label>
               <select id="cfg-env">
-                <option value="${'us-west'}" ${env === 'us-west' ? 'selected' : ''}>us-west</option>
+                ${SUPPORTED_REGIONS.map(region =>
+                  `<option value="${region}" ${env === region ? 'selected' : ''}>${region}</option>`,
+                ).join('')}
               </select>
             </div>
             <div id="cfg-error"></div>
@@ -104,7 +107,7 @@ export function createConfiguration(
     try {
       await AvatarSDK.initialize(appId.trim(), {
         region: env,
-        drivingServiceMode: DrivingServiceMode.sdk,
+        drivingServiceMode: DrivingServiceMode.direct,
         audioFormat: { channelCount: 1, sampleRate: 16000 },
         logLevel: LogLevel.all,
       })

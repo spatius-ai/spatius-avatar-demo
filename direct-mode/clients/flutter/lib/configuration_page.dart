@@ -59,7 +59,7 @@ class _ConfigurationPageState extends State<ConfigurationPage> {
         configuration: Configuration(
           region: _selectedRegion,
           audioFormat: const AudioFormat(sampleRate: 16000),
-          drivingServiceMode: DrivingServiceMode.sdk,
+          drivingServiceMode: DrivingServiceMode.direct,
           logLevel: LogLevel.all,
         ),
       );
@@ -140,7 +140,8 @@ class _ConfigurationPageState extends State<ConfigurationPage> {
             SegmentedButton<String>(
               segments: const [
                 ButtonSegment(value: 'us-west', label: Text('us-west')),
-                ButtonSegment(value: 'cn', label: Text('cn')),
+                ButtonSegment(value: 'ap-northeast', label: Text('ap-northeast')),
+                ButtonSegment(value: 'cn-beijing', label: Text('cn-beijing')),
               ],
               selected: {_selectedRegion},
               onSelectionChanged: (v) =>

@@ -61,7 +61,7 @@ function handleHostMessage(msg: any) {
     const turnId = msg.turnId
     const isLast = msg.isLast ?? false
     const audioBytes = audioB64 ? base64Decode(audioB64) : new Uint8Array(0)
-    const localCid = (props.activeController as any).yieldAudioData(audioBytes, isLast)
+    const localCid = props.activeController?.yieldAudioData(audioBytes, isLast)
     if (localCid && !backendTurnMap.has(turnId)) {
       backendTurnMap.set(turnId, localCid)
     }
@@ -69,7 +69,7 @@ function handleHostMessage(msg: any) {
     const frames = (msg.frames || []).map((b64: string) => base64Decode(b64))
     const localCid = backendTurnMap.get(msg.turnId)
     if (localCid && frames.length) {
-      ;(props.activeController as any).yieldFramesData(frames, localCid)
+      props.activeController?.yieldFramesData(frames, localCid)
     }
     if (msg.isLast) {
       backendTurnMap.delete(msg.turnId)
@@ -86,7 +86,7 @@ async function backendConnect() {
   if (hostWs.value || backendConnecting.value) return
   backendConnecting.value = true
   try {
-    await (props.activeController as any).initializeAudioContext()
+    await props.activeController?.initializeAudioContext()
   } catch (e) {
     console.error('Audio context init failed:', e)
     backendConnecting.value = false

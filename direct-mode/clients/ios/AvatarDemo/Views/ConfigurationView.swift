@@ -4,12 +4,13 @@ import AvatarKit
 struct ConfigurationView: View {
     @AppStorage("appID") private var appID: String = ""
     @AppStorage("sessionToken") private var sessionToken: String = ""
+    @AppStorage("region") private var region: String = Config.region
 
     @State private var isInitializing = false
     @State private var errorMessage: String?
     @State private var navigateToPlayground = false
 
-    private let region = "us-west"
+    private let supportedRegions = ["us-west", "ap-northeast", "cn-beijing"]
 
     private var canInit: Bool {
         let hasAppID = !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -42,9 +43,13 @@ struct ConfigurationView: View {
                         .font(.headline)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 16)
-                    Text(region)
-                        .font(.body)
-                        .padding(.horizontal, 16)
+                    Picker("Region", selection: $region) {
+                        ForEach(supportedRegions, id: \.self) { region in
+                            Text(region).tag(region)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
                 }
 
                 // Error
@@ -92,7 +97,7 @@ struct ConfigurationView: View {
             configuration: Configuration(
                 region: region,
                 audioFormat: AudioFormat(sampleRate: 16000),
-                drivingServiceMode: .sdk,
+                drivingServiceMode: .direct,
                 logLevel: .all
             )
         )

@@ -43,7 +43,7 @@ onMounted(async () => {
 
   try {
     await AvatarSDK.initialize(appId, {
-      drivingServiceMode: DrivingServiceMode.host,
+      drivingServiceMode: DrivingServiceMode.backend,
       audioFormat: { channelCount: 1, sampleRate: 16000 },
       logLevel: LogLevel.all,
       ...(region ? { region } : {}),

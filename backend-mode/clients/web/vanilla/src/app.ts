@@ -53,12 +53,14 @@ export function createApp(root: HTMLElement) {
 
     const envMap: Record<string, string> = {
       'us-west': 'us-west',
+      'ap-northeast': 'ap-northeast',
+      'cn-beijing': 'cn-beijing',
     }
 
     try {
       await AvatarSDK.initialize(appId, {
         region: envMap[region] ?? 'us-west',
-        drivingServiceMode: DrivingServiceMode.host,
+        drivingServiceMode: DrivingServiceMode.backend,
         audioFormat: { channelCount: 1, sampleRate: 16000 },
         logLevel: LogLevel.all,
       })

@@ -72,7 +72,7 @@ export default function ControlPanel({ activeAvatar, activeController, multiMode
       const turnId = msg.turnId
       const isLast = msg.isLast ?? false
       const audioBytes = audioB64 ? base64Decode(audioB64) : new Uint8Array(0)
-      const localCid = (ctrl as any)?.yieldAudioData(audioBytes, isLast)
+      const localCid = ctrl?.yieldAudioData(audioBytes, isLast)
       if (localCid && !backendTurnMapRef.current.has(turnId)) {
         backendTurnMapRef.current.set(turnId, localCid)
       }
@@ -80,7 +80,7 @@ export default function ControlPanel({ activeAvatar, activeController, multiMode
       const frames = (msg.frames || []).map((b64: string) => base64Decode(b64))
       const localCid = backendTurnMapRef.current.get(msg.turnId)
       if (localCid && frames.length) {
-        ;(ctrl as any)?.yieldFramesData(frames, localCid)
+        ctrl?.yieldFramesData(frames, localCid)
       }
       if (msg.isLast) {
         backendTurnMapRef.current.delete(msg.turnId)
@@ -97,7 +97,7 @@ export default function ControlPanel({ activeAvatar, activeController, multiMode
     if (hostWsRef.current || backendConnecting) return
     setHostConnecting(true)
     try {
-      await (activeControllerRef.current as any)?.initializeAudioContext()
+      await activeControllerRef.current?.initializeAudioContext()
     } catch (e) {
       console.error('Audio context init failed:', e)
       setHostConnecting(false)

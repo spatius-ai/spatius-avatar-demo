@@ -4,7 +4,14 @@ import {
   AvatarSDK,
   AvatarView,
   DrivingServiceMode,
-  } from '@spatius/avatarkit'
+} from '@spatius/avatarkit'
+
+type SpatiusRegion = 'us-west' | 'ap-northeast' | 'cn-beijing'
+
+const SUPPORTED_REGIONS: SpatiusRegion[] = ['us-west', 'ap-northeast', 'cn-beijing']
+
+const readSpatiusRegion = (value: string | undefined): SpatiusRegion =>
+  SUPPORTED_REGIONS.includes(value as SpatiusRegion) ? (value as SpatiusRegion) : 'us-west'
 
 const readNumericEnv = (value: string | undefined, fallback: number) => {
   const parsed = Number(value)
@@ -143,6 +150,7 @@ const splitForTTS = (text: string, flushTail = false) => {
 
 const appId = import.meta.env.VITE_SPATIUS_APP_ID
 const avatarId = import.meta.env.VITE_SPATIUS_AVATAR_ID
+const spatiusRegion = readSpatiusRegion(import.meta.env.VITE_SPATIUS_REGION)
 const openAIApiKey = import.meta.env.VITE_OPENAI_API_KEY || ''
 const openAIModel = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini'
 const openAISttModel = import.meta.env.VITE_OPENAI_STT_MODEL || 'gpt-4o-mini-transcribe'
@@ -338,8 +346,8 @@ function App() {
       if (!AvatarSDK.configuration) {
         pushLog('Initializing AvatarSDK...')
         await AvatarSDK.initialize(appId, {
-          region: 'us-west',
-          drivingServiceMode: (DrivingServiceMode as any).sdk ?? 'network',
+          region: spatiusRegion,
+          drivingServiceMode: DrivingServiceMode.direct,
           audioFormat: {
             channelCount: 1,
             sampleRate: 24000,

@@ -1,6 +1,6 @@
 # Direct Mode Next.js Iframe Content
 
-This Vite React app is the iframe payload used by the parent Next.js SDK-mode demo.
+This Vite React app is the iframe payload used by the parent Next.js Direct Mode demo.
 
 ## Run Directly
 

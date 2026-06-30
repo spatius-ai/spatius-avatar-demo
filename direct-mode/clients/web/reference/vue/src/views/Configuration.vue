@@ -3,11 +3,12 @@ import { ref, computed } from 'vue'
 import {
   AvatarSDK,
   DrivingServiceMode,
-    LogLevel,
+  LogLevel,
 } from '@spatius/avatarkit'
 import type { AppConfig } from '../App.vue'
 
 const DASH_URL = 'https://app.spatius.ai'
+const SUPPORTED_REGIONS = ['us-west', 'ap-northeast', 'cn-beijing'] as const
 const STORAGE_KEY = 'avatarkit-playground-config'
 
 const emit = defineEmits<{
@@ -29,7 +30,7 @@ function saveCache(appId: string, token: string, env: string) {
 }
 
 function normalizeRegion(env?: string) {
-  return env === 'us-west' ? 'us-west' : 'us-west'
+  return env && SUPPORTED_REGIONS.includes(env as (typeof SUPPORTED_REGIONS)[number]) ? env : 'us-west'
 }
 
 const cached = loadCached()
@@ -48,7 +49,7 @@ async function handleInit() {
   try {
     await AvatarSDK.initialize(appId.value.trim(), {
       region: env.value,
-      drivingServiceMode: DrivingServiceMode.sdk,
+      drivingServiceMode: DrivingServiceMode.direct,
       audioFormat: { channelCount: 1, sampleRate: 16000 },
       logLevel: LogLevel.all,
     })
@@ -103,7 +104,9 @@ async function handleInit() {
           <div class="field">
             <label>Region</label>
             <select v-model="env">
-              <option :value="'us-west'">us-west</option>
+              <option v-for="region in SUPPORTED_REGIONS" :key="region" :value="region">
+                {{ region }}
+              </option>
             </select>
           </div>
 

@@ -1,5 +1,7 @@
-onlyBuiltDependencies:
-  - core-js
-  - esbuild
-  - protobufjs
-  - sharp
+minimumReleaseAgeExclude:
+  - '@spatius/avatarkit-rtc@1.1.0'
+allowBuilds:
+  core-js: true
+  esbuild: true
+  protobufjs: true
+  sharp: true

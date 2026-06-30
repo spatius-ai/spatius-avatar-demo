@@ -289,7 +289,7 @@ export function createPlayground(): HTMLElement {
       const turnId = msg.turnId
       const isLast = msg.isLast ?? false
       const audioBytes = audioB64 ? base64Decode(audioB64) : new Uint8Array(0)
-      const localCid = (ctrl as any).yieldAudioData(audioBytes, isLast)
+      const localCid = ctrl?.yieldAudioData(audioBytes, isLast)
       if (localCid && !backendTurnMap.has(turnId)) {
         backendTurnMap.set(turnId, localCid)
       }
@@ -297,7 +297,7 @@ export function createPlayground(): HTMLElement {
       const frames = (msg.frames || []).map((b64: string) => base64Decode(b64))
       const localCid = backendTurnMap.get(msg.turnId)
       if (localCid && frames.length) {
-        ;(ctrl as any).yieldFramesData(frames, localCid)
+        ctrl?.yieldFramesData(frames, localCid)
       }
       if (msg.isLast) {
         backendTurnMap.delete(msg.turnId)
@@ -316,7 +316,7 @@ export function createPlayground(): HTMLElement {
     renderControlPanel()
     const ctrl = mgr.activeController
     try {
-      await (ctrl as any).initializeAudioContext()
+      await ctrl?.initializeAudioContext()
     } catch (e) {
       console.error('Audio context init failed:', e)
       backendConnecting = false

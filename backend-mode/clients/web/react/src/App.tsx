@@ -68,12 +68,12 @@ export default function App() {
         return
       }
 
-      const env = result.region === 'us-west' ? 'us-west' : 'us-west'
+      const env = ['us-west', 'ap-northeast', 'cn-beijing'].includes(result.region) ? result.region : 'us-west'
 
       try {
         await AvatarSDK.initialize(result.appId!, {
           region: env,
-          drivingServiceMode: DrivingServiceMode.host,
+          drivingServiceMode: DrivingServiceMode.backend,
           audioFormat: { channelCount: 1, sampleRate: 16000 },
           logLevel: LogLevel.all,
         })

@@ -10,7 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  spatius: ^1.0.0
+  spatius: 1.2.0
   shared_preferences: ^2.3.0
 
 dev_dependencies:

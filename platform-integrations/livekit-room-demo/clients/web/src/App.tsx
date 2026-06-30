@@ -4,7 +4,7 @@ import {
   AvatarSDK,
   AvatarView,
   DrivingServiceMode,
-  } from '@spatius/avatarkit'
+} from '@spatius/avatarkit'
 import { AvatarPlayer, LiveKitProvider } from '@spatius/avatarkit-rtc'
 
 type TokenResponse = {
@@ -14,8 +14,14 @@ type TokenResponse = {
   identity: string
 }
 
+type SpatiusRegion = 'us-west' | 'ap-northeast' | 'cn-beijing'
+const SUPPORTED_REGIONS: readonly SpatiusRegion[] = ['us-west', 'ap-northeast', 'cn-beijing']
+
 const appId = import.meta.env.VITE_SPATIUS_APP_ID
 const avatarId = import.meta.env.VITE_SPATIUS_AVATAR_ID
+const region = SUPPORTED_REGIONS.includes(import.meta.env.VITE_SPATIUS_REGION as SpatiusRegion)
+  ? (import.meta.env.VITE_SPATIUS_REGION as SpatiusRegion)
+  : 'us-west'
 
 function App() {
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -83,8 +89,8 @@ function App() {
 
       if (!AvatarSDK.configuration) {
         await AvatarSDK.initialize(appId, {
-          region: 'us-west',
-          drivingServiceMode: DrivingServiceMode.host,
+          region,
+          drivingServiceMode: DrivingServiceMode.backend,
         })
       }
 

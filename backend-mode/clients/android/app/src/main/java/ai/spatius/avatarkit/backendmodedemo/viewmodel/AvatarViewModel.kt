@@ -88,7 +88,7 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
             Configuration(
                 region = region.ifBlank { "us-west" },
                 audioFormat = AudioFormat(16000),
-                drivingServiceMode = DrivingServiceMode.HOST,
+                drivingServiceMode = DrivingServiceMode.BACKEND,
                 logLevel = LogLevel.ALL
             )
         )

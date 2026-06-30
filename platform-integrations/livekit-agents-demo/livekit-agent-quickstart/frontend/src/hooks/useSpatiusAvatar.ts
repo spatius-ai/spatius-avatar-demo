@@ -19,24 +19,19 @@ import type {
   UseSpatiusAvatarResult,
 } from '../types/spatius-avatar'
 
-type AvatarSdkConfiguration = NonNullable<typeof AvatarSDK.configuration> & {
-  characterApiBaseUrl?: string
-  region?: string
-}
-
 function toError(error: unknown, fallbackMessage: string) {
   return error instanceof Error ? error : new Error(fallbackMessage)
 }
 
 function sameSdkConfiguration(options: UseSpatiusAvatarOptions) {
-  const configuration = AvatarSDK.configuration as AvatarSdkConfiguration | null
+  const configuration = AvatarSDK.configuration
 
   return (
     AvatarSDK.appId === options.appId &&
     configuration?.region === (options.region ?? 'us-west') &&
     configuration?.drivingServiceMode ===
-      (options.drivingServiceMode ?? DrivingServiceMode.host) &&
-    configuration?.characterApiBaseUrl === options.characterApiBaseUrl &&
+      (options.drivingServiceMode ?? DrivingServiceMode.backend) &&
+    configuration?.customEndpoint === options.customEndpoint &&
     configuration?.logLevel === options.sdkLogLevel
   )
 }
@@ -44,11 +39,11 @@ function sameSdkConfiguration(options: UseSpatiusAvatarOptions) {
 async function ensureAvatarSdk(options: UseSpatiusAvatarOptions) {
   if (!AvatarSDK.configuration) {
     await AvatarSDK.initialize(options.appId, {
-      characterApiBaseUrl: options.characterApiBaseUrl,
-      drivingServiceMode: options.drivingServiceMode ?? DrivingServiceMode.host,
+      customEndpoint: options.customEndpoint,
+      drivingServiceMode: options.drivingServiceMode ?? DrivingServiceMode.backend,
       region: options.region ?? 'us-west',
       logLevel: options.sdkLogLevel,
-    } as AvatarSdkConfiguration)
+    })
   } else if (!sameSdkConfiguration(options)) {
     throw new Error(
       'AvatarSDK is already initialized with a different configuration. Keep appId and SDK options stable across mounted Spatius avatar providers.',
@@ -83,7 +78,7 @@ export function useSpatiusAvatar(
   const {
     appId,
     avatarId,
-    characterApiBaseUrl,
+    customEndpoint,
     connection,
     drivingServiceMode,
     enabled = true,
@@ -398,7 +393,7 @@ export function useSpatiusAvatar(
         await ensureAvatarSdk({
           appId,
           avatarId,
-          characterApiBaseUrl,
+          customEndpoint,
           connection: {
             roomName,
             token,
@@ -488,7 +483,7 @@ export function useSpatiusAvatar(
   }, [
     appId,
     avatarId,
-    characterApiBaseUrl,
+    customEndpoint,
     containerElement,
     containerReady,
     drivingServiceMode,
