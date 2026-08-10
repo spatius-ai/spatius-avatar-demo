@@ -3,7 +3,14 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:spatius/avatar_kit.dart' as ak;
+import 'package:spatius_avatarkit/spatius_avatarkit.dart' as ak;
+
+/// Shown next to the clip list so nobody reads the bundled files as the limit of
+/// what Direct Mode accepts.
+const audioSourceHint =
+    'These clips are bundled samples, not a limitation. send() takes any PCM16 audio '
+    'at the configured sample rate — stream it live from a microphone, a TTS service, '
+    'or your own pipeline the same way. The demo ships files so it runs without extra setup.';
 
 const _audioFiles = [
   'demo_pcm_audio1.pcm',
@@ -11,6 +18,15 @@ const _audioFiles = [
   'demo_pcm_audio3.pcm',
   'speech.pcm',
 ];
+
+enum ToastKind { error, warning }
+
+class ToastMessage {
+  const ToastMessage(this.text, {this.kind = ToastKind.error});
+
+  final String text;
+  final ToastKind kind;
+}
 
 class AvatarViewModel extends ChangeNotifier {
   // --- Public state ---
@@ -20,6 +36,10 @@ class AvatarViewModel extends ChangeNotifier {
   ak.Avatar? avatar;
   bool isSendingAudio = false;
   String? currentlyPlayingFile;
+
+  /// Set by the page so failures and blocked actions surface in the UI
+  /// instead of only reaching [errorMessage].
+  void Function(ToastMessage)? onToast;
 
   List<String> get audioFiles => _audioFiles;
 
@@ -50,6 +70,7 @@ class AvatarViewModel extends ChangeNotifier {
 
     controller.onError = (error) {
       errorMessage = error.name;
+      onToast?.call(ToastMessage(error.name));
       notifyListeners();
     };
   }
@@ -74,9 +95,24 @@ class AvatarViewModel extends ChangeNotifier {
 
   // --- Audio file sending ---
 
+  /// Streams a bundled clip to the avatar.
+  ///
+  /// The chunking is what matters, not the file: [ak.AvatarController.send] accepts
+  /// any PCM16 at the configured sample rate, so a microphone or TTS stream feeds it
+  /// the same way — hand it bytes as they arrive and mark the final chunk with `end`.
   Future<void> sendAudioFile(String filename) async {
+    // Direct Mode has no session until start() runs, so audio sent now would
+    // be dropped silently. Say so instead of leaving a dead button.
+    if (!_isConnected) {
+      onToast?.call(const ToastMessage(
+        'Please tap Start to connect before sending audio.',
+        kind: ToastKind.warning,
+      ));
+      return;
+    }
+
     final controller = _controller;
-    if (controller == null || !_isConnected) return;
+    if (controller == null) return;
 
     _cancelSending();
     controller.interrupt();
@@ -87,6 +123,7 @@ class AvatarViewModel extends ChangeNotifier {
       audioData = byteData.buffer.asUint8List();
     } catch (e) {
       errorMessage = 'Cannot read $filename';
+      onToast?.call(ToastMessage('Cannot read $filename'));
       notifyListeners();
       return;
     }
