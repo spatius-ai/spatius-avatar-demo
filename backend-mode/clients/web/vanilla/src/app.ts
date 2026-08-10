@@ -58,7 +58,7 @@ export function createApp(root: HTMLElement) {
     try {
       await AvatarSDK.initialize(appId, {
         region: envMap[region] ?? 'us-west',
-        drivingServiceMode: DrivingServiceMode.host,
+        drivingServiceMode: DrivingServiceMode.backend,
         audioFormat: { channelCount: 1, sampleRate: 16000 },
         logLevel: LogLevel.all,
       })

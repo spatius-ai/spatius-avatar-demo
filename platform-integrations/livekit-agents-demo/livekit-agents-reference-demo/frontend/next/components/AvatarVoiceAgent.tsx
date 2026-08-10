@@ -13,6 +13,8 @@ import AudioVisualizer from "./AudioVisualizer";
 import ChatInput from "./ChatInput";
 import TranscriptView from "./TranscriptView";
 import { type TranscriptMessage, upsertTranscriptMessage } from "./transcript";
+import Toast from "./Toast";
+import { useToast } from "../hooks/useToast";
 
 interface AvatarVoiceAgentProps {
   token: string;
@@ -55,6 +57,7 @@ export default function AvatarVoiceAgent({
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { messages, push: notify, dismiss } = useToast();
   const [containerReady, setContainerReady] = useState(false);
   const [transcripts, setTranscripts] = useState<TranscriptMessage[]>([]);
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false);
@@ -192,7 +195,7 @@ export default function AvatarVoiceAgent({
       if (!AvatarSDK.configuration) {
         await AvatarSDK.initialize(config.appId, {
           region: config.region,
-          drivingServiceMode: DrivingServiceMode.host,
+          drivingServiceMode: DrivingServiceMode.backend,
         });
       }
 
@@ -230,7 +233,11 @@ export default function AvatarVoiceAgent({
       });
 
       player.on("error", (eventError: unknown) => {
-        setError(eventError instanceof Error ? eventError.message : "Avatar player error");
+        {
+          const message = eventError instanceof Error ? eventError.message : "Avatar player error";
+          setError(message);
+          notify(message);
+        }
       });
 
       player.on("stalled", async () => {
@@ -399,6 +406,8 @@ export default function AvatarVoiceAgent({
           </div>
         )}
       </main>
+
+      <Toast messages={messages} onDismiss={dismiss} />
     </div>
   );
 }

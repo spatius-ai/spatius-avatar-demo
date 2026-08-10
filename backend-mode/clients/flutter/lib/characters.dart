@@ -6,8 +6,8 @@ class AvatarCharacter {
 }
 
 const defaultCharacters = [
-  AvatarCharacter(id: '93dd60f8-d9e2-47cf-973e-d75e10cfc951', name: 'Rohan'),
-  AvatarCharacter(id: '17a9aed2-4b35-4eb8-8bf2-675a278bd80d', name: 'Dr. Kellan'),
-  AvatarCharacter(id: '2a5170ff-8d1f-4d10-ac50-0ab4893df328', name: 'Priya'),
-  AvatarCharacter(id: 'ab7117a9-f954-44df-8c25-06d28e4f6ec7', name: 'Josh'),
+  AvatarCharacter(id: '41c62a7c-993c-4b6b-b6d3-549ce3c8be00', name: 'Kian'),
+  AvatarCharacter(id: 'dbb01388-7c57-47bf-ab59-c492caeb9d90', name: 'Julian'),
+  AvatarCharacter(id: 'd51ab422-3db7-47cc-afa8-7273b02bc70b', name: 'Clara'),
+  AvatarCharacter(id: 'c7069121-8245-4015-9940-82d0dc0c6bda', name: 'Halima'),
 ];

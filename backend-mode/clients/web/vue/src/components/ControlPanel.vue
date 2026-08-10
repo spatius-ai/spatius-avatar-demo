@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { pushToast } from '../composables/useToast'
 import { ref, computed, onUnmounted } from 'vue'
 import type { AvatarController } from '@spatius/avatarkit'
 import type { AvatarInstance } from '../composables/useAvatarSDK'

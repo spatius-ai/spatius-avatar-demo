@@ -95,9 +95,6 @@ input, select {
   padding: 10px 14px;
   font-size: 14px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
   outline: none;
   transition: border-color 0.2s;
 }
@@ -138,9 +135,6 @@ input:focus, select:focus {
   gap: 16px;
   max-width: 1100px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
 }
 
 .mode-card {
@@ -162,9 +156,6 @@ input:focus, select:focus {
 
 .mode-diagram {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
   max-width: 860px;
   height: auto;
   margin: 0 auto 12px;
@@ -207,19 +198,14 @@ input:focus, select:focus {
   gap: 32px;
   max-width: none;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
 }
 
 .config-container {
+  max-width: 480px;
   background: var(--surface);
   border-radius: var(--radius);
   padding: 40px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 
@@ -360,9 +346,6 @@ input:focus, select:focus {
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
   padding: 10px 12px;
   background: var(--bg);
   border-radius: var(--radius-sm);
@@ -385,7 +368,7 @@ input:focus, select:focus {
   justify-content: center;
   font-weight: 600;
   font-size: 14px;
-  flex: 1;
+  flex-shrink: 0;
 }
 
 .character-spinner {
@@ -476,9 +459,6 @@ input:focus, select:focus {
 .list-guide {
   margin-top: 16px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
   border-radius: 6px;
 }
 
@@ -548,8 +528,6 @@ input:focus, select:focus {
 .canvas-container {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: top left;
   height: 100%;
 }
 
@@ -619,10 +597,7 @@ input:focus, select:focus {
   padding: 20px 0;
 }
 
-.full-width { width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left; }
+.full-width { width: 100%; }
 
 .audio-list {
   display: flex;
@@ -757,9 +732,6 @@ input:focus, select:focus {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: top left;
   padding: 8px 10px;
   background: var(--bg);
   border-radius: var(--radius-sm);
@@ -788,11 +760,64 @@ input:focus, select:focus {
   justify-content: center;
   font-size: 11px;
   font-weight: 600;
-  flex: 1;
+  flex-shrink: 0;
 }
 
 .slot-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Floating notices ─────────────────────────────────────────────── */
+/* SDK errors and guidance surfaced outside the developer console. */
+.toast-stack {
+  position: fixed;
+  top: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: max-content;
+  max-width: min(32rem, calc(100vw - 2.5rem));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: #fff;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.18s ease-out;
+}
+
+.toast-error { background: #b4232b; }
+.toast-warning { background: #9a6412; }
+
+.toast-text { flex: 1; word-break: break-word; }
+
+.toast-close {
+  flex: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  opacity: 0.75;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.toast-close:hover { opacity: 1; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-0.5rem); }
+  to { opacity: 1; transform: translateY(0); }
 }

@@ -13,6 +13,8 @@ import {
   SpatiusAvatarStatus,
   useSpatiusAvatarContext,
 } from "@/components/spatius-avatar";
+import Toast from './components/Toast'
+import { useToast } from './hooks/useToast'
 
 type ConnectionInfo = {
   token: string;
@@ -141,6 +143,8 @@ function AvatarVoiceAgent({
 }
 
 function App() {
+  const { messages, push: notify, dismiss } = useToast()
+
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(
     null,
   );
@@ -169,7 +173,9 @@ function App() {
       const data = await response.json();
       setConnectionInfo(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed");
+      const message = err instanceof Error ? err.message : "Connection failed";
+      setError(message);
+      notify(message);
     } finally {
       setIsConnecting(false);
     }
@@ -207,6 +213,8 @@ function App() {
           {isConnecting ? "Connecting..." : "Connect"}
         </button>
       </div>
+
+      <Toast messages={messages} onDismiss={dismiss} />
     </div>
   );
 }

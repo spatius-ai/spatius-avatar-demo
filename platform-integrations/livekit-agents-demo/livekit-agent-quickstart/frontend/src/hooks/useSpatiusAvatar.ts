@@ -35,7 +35,7 @@ function sameSdkConfiguration(options: UseSpatiusAvatarOptions) {
     AvatarSDK.appId === options.appId &&
     configuration?.region === (options.region ?? 'us-west') &&
     configuration?.drivingServiceMode ===
-      (options.drivingServiceMode ?? DrivingServiceMode.host) &&
+      (options.drivingServiceMode ?? DrivingServiceMode.rtc) &&
     configuration?.characterApiBaseUrl === options.characterApiBaseUrl &&
     configuration?.logLevel === options.sdkLogLevel
   )
@@ -45,7 +45,7 @@ async function ensureAvatarSdk(options: UseSpatiusAvatarOptions) {
   if (!AvatarSDK.configuration) {
     await AvatarSDK.initialize(options.appId, {
       characterApiBaseUrl: options.characterApiBaseUrl,
-      drivingServiceMode: options.drivingServiceMode ?? DrivingServiceMode.host,
+      drivingServiceMode: options.drivingServiceMode ?? DrivingServiceMode.rtc,
       region: options.region ?? 'us-west',
       logLevel: options.sdkLogLevel,
     } as AvatarSdkConfiguration)

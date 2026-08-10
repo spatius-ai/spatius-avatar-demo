@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:spatius/avatar_kit.dart' hide ConnectionState;
+import 'package:spatius_avatarkit/spatius_avatarkit.dart' hide ConnectionState;
 
 import 'config.dart';
 import 'playground_page.dart';
@@ -97,7 +97,7 @@ class _ConfigCheckPageState extends State<ConfigCheckPage> {
       configuration: Configuration(
         region: region,
         audioFormat: const AudioFormat(sampleRate: 16000),
-        drivingServiceMode: DrivingServiceMode.host,
+        drivingServiceMode: DrivingServiceMode.backend,
         logLevel: LogLevel.all,
       ),
     );

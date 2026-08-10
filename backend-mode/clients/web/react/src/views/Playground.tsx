@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAvatarManager } from '../hooks/useAvatarSDK'
 import CharacterList from '../components/CharacterList'
 import ControlPanel from '../components/ControlPanel'
+import Toast from '../components/Toast'
+import { useToast } from '../hooks/useToast'
 
 const MAX_AVATARS = 4
 
@@ -9,6 +11,7 @@ export default function Playground() {
   const [multiMode, setMultiMode] = useState(false)
   const [loadingCharId, setLoadingCharId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const { messages, push: notify, dismiss } = useToast()
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const {
@@ -20,7 +23,7 @@ export default function Playground() {
     loadAvatar,
     removeAvatar,
     removeAll,
-  } = useAvatarManager()
+  } = useAvatarManager(notify)
 
   // Update active-cell highlight when activeUid changes
   useEffect(() => {
@@ -105,6 +108,7 @@ export default function Playground() {
       overlay.remove()
     } catch (e: any) {
       console.error('Load failed:', e)
+      notify(`Failed to load avatar: ${e?.message ?? e}`)
       cell.remove()
     } finally {
       setLoadingCharId(null)
@@ -195,8 +199,11 @@ export default function Playground() {
           avatarSlots={avatarSlots}
           activeUid={activeUid}
           onSlotSelect={setActiveUid}
+          onNotify={notify}
         />
       </div>
+
+      <Toast messages={messages} onDismiss={dismiss} />
     </div>
   )
 }
