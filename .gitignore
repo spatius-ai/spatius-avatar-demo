@@ -48,3 +48,6 @@
 .cursorindexingignore
 .claude/
 docs/superpowers/
+
+# AvatarKit worker chunks copied into public/ by withAvatarkit at build time
+**/public/assets/
