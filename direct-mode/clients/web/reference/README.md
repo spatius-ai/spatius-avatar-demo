@@ -58,3 +58,13 @@ Use backend proxy + secret management in production.
 - OpenAI Chat Completions (stream): https://platform.openai.com/docs/api-reference/chat/create
 - OpenAI Audio Transcriptions: https://platform.openai.com/docs/api-reference/audio/createTranscription
 - OpenAI Audio Speech: https://platform.openai.com/docs/api-reference/audio/createSpeech
+
+## About the bundled audio
+
+The clips shipped with this demo are samples, not a constraint. `send()` takes
+any PCM16 audio at the configured sample rate — live microphone capture, a TTS
+stream, or audio from your own pipeline all go through the same call. Files are
+bundled so the demo runs with nothing but an App ID and a Session Token.
+
+See [Direct Mode](../../../README.md#about-the-audio-in-these-demos) for the full picture.
+

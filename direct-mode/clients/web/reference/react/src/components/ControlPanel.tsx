@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { AvatarController } from '@spatius/avatarkit'
 import type { AvatarInstance } from '../hooks/useAvatarSDK'
-import { PCM_ASSETS } from '../data/audioAssets'
+import { PCM_ASSETS, AUDIO_SOURCE_HINT } from '../data/audioAssets'
 import { loadPcmFile, sendPcmChunks } from '../utils/audio'
 
 interface AvatarSlot {
@@ -17,10 +17,14 @@ interface Props {
   avatarSlots?: AvatarSlot[]
   activeUid?: string | null
   onSlotSelect?: (uid: string) => void
+  onNotify?: (text: string, kind?: 'error' | 'warning') => void
 }
 
-export default function ControlPanel({ activeAvatar, activeController, multiMode, avatarSlots, activeUid, onSlotSelect }: Props) {
-  const [sending, setSending] = useState(false)
+export default function ControlPanel({ activeAvatar, activeController, multiMode, avatarSlots, activeUid, onSlotSelect, onNotify }: Props) {
+  // Track which clip is playing, not just that one is: swapping every button's
+  // label at once resizes them and reflows the panel, which stutters the canvas.
+  const [sendingPath, setSendingPath] = useState<string | null>(null)
+  const sending = sendingPath !== null
   const sdkCancelRef = useRef<(() => void) | null>(null)
 
   const connected = activeAvatar?.connectionState === 'connected'
@@ -33,39 +37,48 @@ export default function ControlPanel({ activeAvatar, activeController, multiMode
       await activeController.start()
     } catch (e: any) {
       console.error('Start failed:', e)
+      onNotify?.(`Failed to connect: ${e?.message ?? e}`)
     }
-  }, [activeController])
+  }, [activeController, onNotify])
 
   const handleSendPcm = useCallback(async (path: string) => {
+    // Direct Mode has no session until start() runs, so audio sent now would be
+    // dropped silently. Say so instead of leaving a dead button.
+    if (!connected) {
+      onNotify?.('Please click Start to connect before sending audio.', 'warning')
+      return
+    }
     if (!activeController || sending) return
-    setSending(true)
+    setSendingPath(path)
     try {
-      await (activeController as any).initializeAudioContext()
+      // The audio context is already warmed up by handleStart; doing it here
+      // again stalls the first frames of playback.
       const data = await loadPcmFile(path)
       sdkCancelRef.current = sendPcmChunks(
         data,
         (chunk, end) => activeController.send(chunk.buffer as ArrayBuffer, end),
-        () => setSending(false),
+        () => setSendingPath(null),
       )
     } catch (e: any) {
       console.error('Send failed:', e)
-      setSending(false)
+      onNotify?.(`Failed to send audio: ${e?.message ?? e}`)
+      setSendingPath(null)
     }
-  }, [activeController, sending])
+  }, [activeController, sending, connected, onNotify])
 
   const handlePause = () => activeController?.pause()
   const handleResume = () => activeController?.resume()
   const handleInterrupt = () => {
     activeController?.interrupt()
     if (sdkCancelRef.current) { sdkCancelRef.current(); sdkCancelRef.current = null }
-    setSending(false)
+    setSendingPath(null)
   }
 
   useEffect(() => {
     if (!connected && sdkCancelRef.current) {
       sdkCancelRef.current()
       sdkCancelRef.current = null
-      setSending(false)
+      setSendingPath(null)
     }
   }, [connected])
 
@@ -127,15 +140,18 @@ export default function ControlPanel({ activeAvatar, activeController, multiMode
           </button>
 
           <div className="audio-list">
-            <h4>Audio Files</h4>
+            <h4>
+              Audio Files
+              <span className="audio-hint" title={AUDIO_SOURCE_HINT}>?</span>
+            </h4>
             {PCM_ASSETS.map(a => (
               <button
                 key={a.path}
                 className="secondary full-width audio-btn"
-                disabled={!connected || sending}
+                disabled={sending}
                 onClick={() => handleSendPcm(a.path)}
               >
-                {sending ? '...' : `▶ ${a.name}`}
+                {sendingPath === a.path ? '...' : `▶ ${a.name}`}
               </button>
             ))}
           </div>

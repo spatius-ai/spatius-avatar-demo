@@ -25,8 +25,11 @@ function saveCache(appId: string, token: string, env: string) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ appId, token, env })) } catch { /* ignore */ }
 }
 
+const REGIONS = ['auto', 'us-west', 'cn-beijing']
+
+// 'auto' lets the SDK pick the closest serving region at initialize time.
 function normalizeRegion(env?: string) {
-  return env === 'us-west' ? 'us-west' : 'us-west'
+  return REGIONS.includes(env as string) ? env! : 'auto'
 }
 
 export function createConfiguration(
@@ -60,7 +63,7 @@ export function createConfiguration(
             <div class="field">
               <label>Region</label>
               <select id="cfg-env">
-                <option value="${'us-west'}" ${env === 'us-west' ? 'selected' : ''}>us-west</option>
+                ${REGIONS.map(r => `<option value="${r}" ${env === r ? 'selected' : ''}>${r}</option>`).join('')}
               </select>
             </div>
             <div id="cfg-error"></div>
@@ -103,8 +106,8 @@ export function createConfiguration(
     errDiv.innerHTML = ''
     try {
       await AvatarSDK.initialize(appId.trim(), {
-        region: env,
-        drivingServiceMode: DrivingServiceMode.sdk,
+        ...(env === 'auto' ? {} : { region: env }),
+        drivingServiceMode: DrivingServiceMode.direct,
         audioFormat: { channelCount: 1, sampleRate: 16000 },
         logLevel: LogLevel.all,
       })

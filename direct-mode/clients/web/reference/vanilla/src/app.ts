@@ -4,7 +4,7 @@ import { createPlayground } from './views/playground'
 
 export function createApp(root: HTMLElement) {
   let step: 1 | 2 = 1
-  const mode = DrivingServiceMode.sdk
+  const mode = DrivingServiceMode.direct
   let config: AppConfig | null = null
 
   const app = document.createElement('div')

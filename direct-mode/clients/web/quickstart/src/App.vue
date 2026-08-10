@@ -26,6 +26,25 @@ const QUICKSTART_AUDIO_URL = '/quickstart_voice.pcm'
 const container = ref<HTMLDivElement | null>(null)
 const audioSource = ref<AudioSource>('sample')
 const status = ref('Connect the avatar, then send the bundled sample audio.')
+
+// Floating notices: SDK failures should not be something a reader has to find
+// in the developer console.
+interface ToastMessage { id: number; kind: 'error' | 'warning'; text: string }
+const toasts = ref<ToastMessage[]>([])
+let nextToastId = 0
+
+function pushToast(text: string, kind: 'error' | 'warning' = 'error') {
+  if (!text) return
+  // The SDK can report the same failure repeatedly; one notice is enough.
+  if (toasts.value.some(t => t.text === text)) return
+  const id = nextToastId++
+  toasts.value = [...toasts.value, { id, kind, text }]
+  setTimeout(() => dismissToast(id), 5000)
+}
+
+function dismissToast(id: number) {
+  toasts.value = toasts.value.filter(t => t.id !== id)
+}
 const avatarStatus = ref('Not connected')
 const realtimeStatus = ref('Not connected')
 const connectingAvatar = ref(false)
@@ -168,7 +187,7 @@ async function connectAvatar(): Promise<void> {
     if (!AvatarSDK.configuration) {
       await AvatarSDK.initialize(appId, {
         region: 'us-west',
-        drivingServiceMode: DrivingServiceMode.sdk,
+        drivingServiceMode: DrivingServiceMode.direct,
         audioFormat: {
           channelCount: 1,
           sampleRate: AVATAR_INPUT_SAMPLE_RATE,
@@ -197,6 +216,7 @@ async function connectAvatar(): Promise<void> {
   } catch (error) {
     avatarStatus.value = 'Failed'
     status.value = error instanceof Error ? error.message : 'Failed to connect avatar'
+    pushToast(status.value)
   } finally {
     connectingAvatar.value = false
   }
@@ -225,6 +245,7 @@ async function connectRealtime(): Promise<void> {
       },
       onError: (message) => {
         status.value = message
+        pushToast(message)
         realtimeStatus.value = 'Error'
         responding.value = false
         finishAvatarAudioTurn()
@@ -481,4 +502,15 @@ onBeforeUnmount(() => {
       </aside>
     </section>
   </main>
+  <div v-if="toasts.length" class="toast-stack">
+    <div
+      v-for="t in toasts"
+      :key="t.id"
+      :class="['toast', `toast-${t.kind}`]"
+      role="alert"
+    >
+      <span class="toast-text">{{ t.text }}</span>
+      <button class="toast-close" aria-label="Dismiss" @click="dismissToast(t.id)">×</button>
+    </div>
+  </div>
 </template>

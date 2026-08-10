@@ -4,6 +4,8 @@ import type { AppConfig } from '../App'
 import { useAvatarManager } from '../hooks/useAvatarSDK'
 import CharacterList from '../components/CharacterList'
 import ControlPanel from '../components/ControlPanel'
+import Toast from '../components/Toast'
+import { useToast } from '../hooks/useToast'
 
 interface Props {
   mode: DrivingServiceMode
@@ -16,6 +18,7 @@ export default function Playground({ mode, config }: Props) {
   const [multiMode, setMultiMode] = useState(false)
   const [loadingCharId, setLoadingCharId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const { messages, push: notify, dismiss } = useToast()
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const {
@@ -27,7 +30,7 @@ export default function Playground({ mode, config }: Props) {
     loadAvatar,
     removeAvatar,
     removeAll,
-  } = useAvatarManager()
+  } = useAvatarManager(notify)
 
   // Update active-cell highlight when activeUid changes
   useEffect(() => {
@@ -112,11 +115,12 @@ export default function Playground({ mode, config }: Props) {
       overlay.remove()
     } catch (e: any) {
       console.error('Load failed:', e)
+      notify(`Failed to load avatar: ${e?.message ?? e}`)
       cell.remove()
     } finally {
       setLoadingCharId(null)
     }
-  }, [loadingCharId, avatars.length, multiMode, removeAll, loadAvatar, setActiveUid])
+  }, [loadingCharId, avatars.length, multiMode, removeAll, loadAvatar, setActiveUid, notify])
 
   const handleRemoveAvatar = useCallback((uid: string) => {
     const cell = containerRefs.current.get(uid)
@@ -202,8 +206,11 @@ export default function Playground({ mode, config }: Props) {
           avatarSlots={avatarSlots}
           activeUid={activeUid}
           onSlotSelect={setActiveUid}
+          onNotify={notify}
         />
       </div>
+
+      <Toast messages={messages} onDismiss={dismiss} />
     </div>
   )
 }
