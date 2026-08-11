@@ -4,12 +4,14 @@ import AvatarKit
 struct ConfigurationView: View {
     @AppStorage("appID") private var appID: String = ""
     @AppStorage("sessionToken") private var sessionToken: String = ""
+    @AppStorage("region") private var region: String = "auto"
 
     @State private var isInitializing = false
     @State private var errorMessage: String?
     @State private var navigateToPlayground = false
 
-    private let region = "us-west"
+    /// "auto" lets the SDK resolve the closest serving region at init.
+    private let regions = ["auto", "us-west", "cn-beijing"]
 
     private var canInit: Bool {
         let hasAppID = !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -34,7 +36,8 @@ struct ConfigurationView: View {
                            link: ("Developer Platform", "https://app.spatius.ai"))
 
                 // Session Token
-                inputField(title: "Session Token", placeholder: "Enter Session Token", text: $sessionToken)
+                inputField(title: "Session Token", placeholder: "Enter Session Token", text: $sessionToken,
+                           link: ("How to get one", SessionTokenService.temporaryTokenDocsURL))
 
                 // Region
                 VStack(alignment: .leading, spacing: 8) {
@@ -42,8 +45,14 @@ struct ConfigurationView: View {
                         .font(.headline)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 16)
-                    Text(region)
-                        .font(.body)
+                    Picker("Region", selection: $region) {
+                        ForEach(regions, id: \.self) { Text($0).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 12)
+                    Text("\"auto\" picks the closest serving region at initialization.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .padding(.horizontal, 16)
                 }
 
@@ -92,7 +101,7 @@ struct ConfigurationView: View {
             configuration: Configuration(
                 region: region,
                 audioFormat: AudioFormat(sampleRate: 16000),
-                drivingServiceMode: .sdk,
+                drivingServiceMode: .direct,
                 logLevel: .all
             )
         )

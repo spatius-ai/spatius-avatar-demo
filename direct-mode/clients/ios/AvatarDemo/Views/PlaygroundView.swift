@@ -10,6 +10,7 @@ struct PlaygroundView: View {
     @State private var isLoadingAvatar = false
     @State private var loadError: String?
     @State private var loadProgress: Double = 0
+    @State private var showAudioHint = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -83,6 +84,12 @@ struct PlaygroundView: View {
         }
         .navigationTitle("Playground")
         .navigationBarTitleDisplayMode(.inline)
+        .toast($viewModel.toast)
+        .alert("Sending audio", isPresented: $showAudioHint) {
+            Button("Got it", role: .cancel) {}
+        } message: {
+            Text(audioSourceHint)
+        }
         .onDisappear { viewModel.close() }
     }
 
@@ -106,10 +113,18 @@ struct PlaygroundView: View {
 
     private var audioFileSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("Audio Files")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button {
+                    showAudioHint = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
                 Spacer()
                 if viewModel.isSendingAudio {
                     ProgressView().scaleEffect(0.7)
@@ -137,6 +152,8 @@ struct PlaygroundView: View {
                     .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
+                // Stays tappable while disconnected so the guard can explain
+                // why nothing would play, rather than the row going dead.
                 .disabled(viewModel.isSendingAudio)
                 .padding(.horizontal, 12)
             }

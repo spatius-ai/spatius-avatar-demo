@@ -12,6 +12,8 @@ import {
   SpatiusAvatarStatus,
   useSpatiusAvatarContext,
 } from '@/components/spatius-avatar'
+import Toast from './components/Toast'
+import { useToast } from './hooks/useToast'
 
 type AvatarConnection = {
   url: string
@@ -27,6 +29,7 @@ type TokenResponse = {
 
 function AvatarPanel({ onExit }: { onExit: () => void }) {
   const avatar = useSpatiusAvatarContext()
+
   const [pending, setPending] = useState(false)
   const micPublication = avatar.room?.localParticipant.getTrackPublication(Track.Source.Microphone)
   const hasPublishedMic = Boolean(micPublication?.track)
@@ -97,6 +100,7 @@ function AvatarPanel({ onExit }: { onExit: () => void }) {
 }
 
 export default function App() {
+  const { messages, push: notify, dismiss } = useToast()
   const appId = import.meta.env.VITE_SPATIUS_APP_ID
   const avatarId = import.meta.env.VITE_SPATIUS_AVATAR_ID
   const tokenEndpoint = import.meta.env.VITE_TOKEN_ENDPOINT || '/token'
@@ -155,7 +159,7 @@ export default function App() {
           connection={connection}
           onConnected={() => setStatus('Connected. Click Enable Mic to talk.')}
           onDisconnected={() => setStatus('Disconnected')}
-          onAvatarError={(error) => setStatus(error.message)}
+          onAvatarError={(error) => { setStatus(error.message); notify(error.message) }}
         >
           <AvatarPanel
             onExit={() => {
@@ -172,6 +176,8 @@ export default function App() {
           <span className="text-sm">{status}</span>
         </div>
       )}
+
+      <Toast messages={messages} onDismiss={dismiss} />
     </div>
   )
 }

@@ -21,6 +21,12 @@ iOS client for [Backend Mode](../../README.md). All AI processing (ASR → LLM �
 
    AvatarKit.xcframework will be downloaded automatically on first build from the configured release. Override `SPATIUS_AVATARKIT_IOS_URL` and `SPATIUS_AVATARKIT_IOS_CHECKSUM` only when testing a different release.
 
+   > **Running on a physical device?** The project carries the Spatius signing
+   > identity, which your Apple developer account cannot use. In Xcode go to
+   > **AvatarDemo → Signing & Capabilities**, set **Team** to your own account, and
+   > change **Bundle Identifier** to something unique (for example
+   > `com.yourname.avatarDemo`). The Simulator needs no signing.
+
 ## How it works
 
 ```

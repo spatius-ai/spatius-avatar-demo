@@ -6,6 +6,8 @@ import {
   DrivingServiceMode,
   } from '@spatius/avatarkit'
 import { AvatarPlayer, LiveKitProvider } from '@spatius/avatarkit-rtc'
+import Toast from './components/Toast'
+import { useToast } from './hooks/useToast'
 
 type TokenResponse = {
   token: string
@@ -32,6 +34,8 @@ function App() {
     return !connecting && !connected && Boolean(appId) && Boolean(avatarId)
   }, [connecting, connected])
 
+  const { messages, push: notify, dismiss } = useToast()
+
   const pushLog = useCallback((message: string) => {
     setLogs((prev) => [`${new Date().toLocaleTimeString()} ${message}`, ...prev].slice(0, 30))
   }, [])
@@ -57,6 +61,7 @@ function App() {
       }
     } catch (error) {
       pushLog(`Disconnect failed: ${(error as Error).message}`)
+      notify(`Disconnect failed: ${(error as Error).message}`)
     }
 
     try {
@@ -84,7 +89,7 @@ function App() {
       if (!AvatarSDK.configuration) {
         await AvatarSDK.initialize(appId, {
           region: 'us-west',
-          drivingServiceMode: DrivingServiceMode.host,
+          drivingServiceMode: DrivingServiceMode.rtc,
         })
       }
 
@@ -113,6 +118,7 @@ function App() {
       pushLog('This is a pure RTC sample without agent dispatch')
     } catch (error) {
       pushLog(`Connection failed: ${(error as Error).message}`)
+      notify(`Connection failed: ${(error as Error).message}`)
       await disconnect()
     } finally {
       setConnecting(false)
@@ -190,6 +196,8 @@ function App() {
           </ul>
         </section>
       </main>
+
+      <Toast messages={messages} onDismiss={dismiss} />
     </div>
   )
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Toast from './components/Toast.vue'
 import { ref } from 'vue'
 import Configuration from './views/Configuration.vue'
 import Playground from './views/Playground.vue'
@@ -33,4 +34,5 @@ function handleInitialized(c: AppConfig) {
       />
     </div>
   </div>
+  <Toast />
 </template>

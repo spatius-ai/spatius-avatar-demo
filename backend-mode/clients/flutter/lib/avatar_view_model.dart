@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
-import 'package:spatius/avatar_kit.dart' as ak;
+import 'package:spatius_avatarkit/spatius_avatarkit.dart' as ak;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'config.dart';

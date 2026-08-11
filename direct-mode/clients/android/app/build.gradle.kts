@@ -4,7 +4,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 val localProperties = Properties()
@@ -19,18 +18,6 @@ fun localString(key: String, defaultValue: String = ""): String {
     return localProperties.getProperty(key, defaultValue)
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
-}
-
-fun localBoolean(key: String, defaultValue: String = "false"): String {
-    return localProperties.getProperty(key, defaultValue).toBooleanStrictOrNull()?.toString() ?: defaultValue
-}
-
-fun localInt(key: String, defaultValue: String): String {
-    return localProperties.getProperty(key, defaultValue).toIntOrNull()?.toString() ?: defaultValue
-}
-
-fun localFloat(key: String, defaultValue: String): String {
-    return "${localProperties.getProperty(key, defaultValue).toFloatOrNull() ?: defaultValue.toFloat()}f"
 }
 
 android {
@@ -51,21 +38,6 @@ android {
         buildConfigField("String", "SPATIUS_APP_ID", "\"${localString("SPATIUS_APP_ID")}\"")
         buildConfigField("String", "SPATIUS_AVATAR_ID", "\"${localString("SPATIUS_AVATAR_ID")}\"")
         buildConfigField("String", "SPATIUS_REGION", "\"${localString("SPATIUS_REGION", "us-west")}\"")
-        buildConfigField("String", "OPENAI_API_KEY", "\"${localString("OPENAI_API_KEY")}\"")
-        buildConfigField("String", "OPENAI_BASE_URL", "\"${localString("OPENAI_BASE_URL", "https://api.openai.com")}\"")
-        buildConfigField("boolean", "OPENAI_USE_PROXY", localBoolean("OPENAI_USE_PROXY"))
-        buildConfigField("String", "OPENAI_PROXY_BASE_URL", "\"${localString("OPENAI_PROXY_BASE_URL", "http://10.0.2.2:8090")}\"")
-        buildConfigField("String", "OPENAI_MODEL", "\"${localString("OPENAI_MODEL", "gpt-4o-mini")}\"")
-        buildConfigField("String", "OPENAI_STT_MODEL", "\"${localString("OPENAI_STT_MODEL", "gpt-4o-mini-transcribe")}\"")
-        buildConfigField("String", "OPENAI_STT_LANGUAGE", "\"${localString("OPENAI_STT_LANGUAGE", "en")}\"")
-        buildConfigField("String", "OPENAI_TTS_MODEL", "\"${localString("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")}\"")
-        buildConfigField("String", "OPENAI_TTS_VOICE", "\"${localString("OPENAI_TTS_VOICE", "alloy")}\"")
-        buildConfigField("float", "VAD_START_THRESHOLD", localFloat("VAD_START_THRESHOLD", "0.03"))
-        buildConfigField("float", "VAD_STOP_THRESHOLD", localFloat("VAD_STOP_THRESHOLD", "0.02"))
-        buildConfigField("int", "VAD_SILENCE_MS", localInt("VAD_SILENCE_MS", "700"))
-        buildConfigField("int", "VAD_MIN_SPEECH_MS", localInt("VAD_MIN_SPEECH_MS", "280"))
-        buildConfigField("int", "VAD_MAX_SPEECH_MS", localInt("VAD_MAX_SPEECH_MS", "8000"))
-        buildConfigField("int", "MIC_SAMPLE_RATE", localInt("MIC_SAMPLE_RATE", "16000"))
     }
 
     buildTypes {
@@ -97,7 +69,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.navigation.compose)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

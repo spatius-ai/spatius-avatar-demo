@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:spatius/avatar_kit.dart' hide ConnectionState, Transform;
+import 'package:spatius_avatarkit/spatius_avatarkit.dart' hide ConnectionState, Transform;
 
 import 'avatar_view_model.dart';
 import 'characters.dart';

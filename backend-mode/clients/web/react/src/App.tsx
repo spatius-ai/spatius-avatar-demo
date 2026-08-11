@@ -73,7 +73,7 @@ export default function App() {
       try {
         await AvatarSDK.initialize(result.appId!, {
           region: env,
-          drivingServiceMode: DrivingServiceMode.host,
+          drivingServiceMode: DrivingServiceMode.backend,
           audioFormat: { channelCount: 1, sampleRate: 16000 },
           logLevel: LogLevel.all,
         })

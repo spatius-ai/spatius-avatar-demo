@@ -22,7 +22,10 @@ export interface AvatarInstance {
 let uidCounter = 0
 const genUid = () => `avatar-${++uidCounter}`
 
-export function useAvatarManager() {
+export function useAvatarManager(onError?: (message: string) => void) {
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+
   const [avatars, setAvatars] = useState<AvatarInstance[]>([])
   const [activeUid, setActiveUid] = useState<string | null>(null)
   const viewRefs = useRef<Map<string, AvatarView>>(new Map())
@@ -73,6 +76,7 @@ export function useAvatarManager() {
       }
       view.controller.onError = (err: Error) => {
         setAvatars(prev => prev.map(a => a.uid === uid ? { ...a, error: err.message } : a))
+        onErrorRef.current?.(err.message)
       }
 
       viewRefs.current.set(uid, view)

@@ -3,6 +3,8 @@ import type { AppConfig } from '../App'
 import { useAvatarManager } from '../hooks/useAvatarSDK'
 import CharacterList from '../components/CharacterList'
 import ControlPanel from '../components/ControlPanel'
+import Toast from '../components/Toast'
+import { useToast } from '../hooks/useToast'
 
 interface Props {
   config: AppConfig
@@ -14,12 +16,13 @@ export default function Playground({ config }: Props) {
   const [multiMode, setMultiMode] = useState(false)
   const [loadingCharId, setLoadingCharId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const { messages, push: notify, dismiss } = useToast()
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const {
     avatars, activeUid, activeAvatar, activeController,
     setActiveUid, loadAvatar, removeAvatar, removeAll,
-  } = useAvatarManager()
+  } = useAvatarManager(notify)
 
   useEffect(() => {
     containerRefs.current.forEach((cell, uid) => {
@@ -105,6 +108,7 @@ export default function Playground({ config }: Props) {
       overlay.remove()
     } catch (e: any) {
       console.error('Load failed:', e)
+      notify(`Failed to load avatar: ${e?.message ?? e}`)
       cell.remove()
     } finally {
       setLoadingCharId(null)
@@ -166,8 +170,11 @@ export default function Playground({ config }: Props) {
           avatarSlots={avatarSlots}
           activeUid={activeUid}
           onSlotSelect={setActiveUid}
+          onNotify={notify}
         />
       </div>
+
+      <Toast messages={messages} onDismiss={dismiss} />
     </div>
   )
 }

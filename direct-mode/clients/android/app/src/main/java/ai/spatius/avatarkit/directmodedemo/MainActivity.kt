@@ -9,11 +9,17 @@ import ai.spatius.avatarkit.DrivingServiceMode
 import ai.spatius.avatarkit.LogLevel
 import ai.spatius.avatarkit.assets.AvatarManager
 import ai.spatius.avatarkit.player.AnimationPlayer.ConversationState
-import ai.spatius.avatarkit.directmodedemo.audio.VadConfig
-import ai.spatius.avatarkit.directmodedemo.audio.VadRecorder
-import ai.spatius.avatarkit.directmodedemo.network.OpenAiClient
-import ai.spatius.avatarkit.directmodedemo.network.OpenAiConfig
-import ai.spatius.avatarkit.directmodedemo.pipeline.TextChunker
+import ai.spatius.avatarkit.directmodedemo.audio.AUDIO_SOURCE_HINT
+import ai.spatius.avatarkit.directmodedemo.audio.PCM_ASSETS
+import ai.spatius.avatarkit.directmodedemo.audio.PcmAsset
+import ai.spatius.avatarkit.directmodedemo.audio.loadPcmAsset
+import ai.spatius.avatarkit.directmodedemo.audio.sendPcmChunks
+import kotlinx.coroutines.Job
+import ai.spatius.avatarkit.directmodedemo.config.AppConfig
+import ai.spatius.avatarkit.directmodedemo.config.ConfigStore
+import ai.spatius.avatarkit.directmodedemo.ui.ToastHost
+import ai.spatius.avatarkit.directmodedemo.ui.ToastKind
+import ai.spatius.avatarkit.directmodedemo.ui.ToastMessage
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -24,6 +30,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -31,6 +38,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +46,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -52,7 +61,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,87 +112,101 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf(LoadStatus.Idle)
     private var errorMsg by mutableStateOf("")
     private var logs by mutableStateOf(emptyList<String>())
-    private var isListening by mutableStateOf(false)
     private var isConnectingConversation by mutableStateOf(false)
     private var sessionTokenInput by mutableStateOf("")
 
+    /** Path of the clip currently streaming, or null when idle. */
+    private var sendingPath by mutableStateOf<String?>(null)
+    private var connected by mutableStateOf(false)
+
+    // Step 1 = configuration, step 2 = playground, mirroring the web demo.
+    private var configStep by mutableStateOf(1)
+    private var appIdInput by mutableStateOf("")
+    private var avatarIdInput by mutableStateOf("")
+    private var regionInput by mutableStateOf("auto")
+    private var initializing by mutableStateOf(false)
+    private var configError by mutableStateOf("")
+    private var toast by mutableStateOf<ToastMessage?>(null)
+    private var toastSerial = 0L
+
+    private var activeConfig: AppConfig? = null
+
     private var avatarView: AvatarView? = null
     private var sdkInitialized = false
-    private var recorder: VadRecorder? = null
+    private var sendJob: Job? = null
 
     private val initializedOnce = AtomicBoolean(false)
-    private val processing = AtomicBoolean(false)
     private val avatarSpeaking = AtomicBoolean(false)
     private val connectionReady = AtomicBoolean(false)
     private val connecting = AtomicBoolean(false)
-    private val conversationStarting = AtomicBoolean(false)
     private val disconnectByClient = AtomicBoolean(false)
 
     private var lastConnectionStateText = ""
     private var lastConversationStateText = ""
 
-    private var pendingStartAfterPermission = false
-
     private val sessionTokenDocsUrl =
         "https://docs.spatius.ai/api-reference/api-reference#obtain-a-session-token"
 
-    private val openAiClient by lazy {
-        OpenAiClient(
-            OpenAiConfig(
-                apiKey = BuildConfig.OPENAI_API_KEY,
-                baseUrl = BuildConfig.OPENAI_BASE_URL,
-                useProxy = BuildConfig.OPENAI_USE_PROXY,
-                proxyBaseUrl = BuildConfig.OPENAI_PROXY_BASE_URL,
-                chatModel = BuildConfig.OPENAI_MODEL,
-                sttModel = BuildConfig.OPENAI_STT_MODEL,
-                sttLanguage = BuildConfig.OPENAI_STT_LANGUAGE,
-                ttsModel = BuildConfig.OPENAI_TTS_MODEL,
-                ttsVoice = BuildConfig.OPENAI_TTS_VOICE,
-            )
-        )
-    }
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            pushLog("Microphone permission granted")
-            if (pendingStartAfterPermission) {
-                pendingStartAfterPermission = false
-                startConversationInternal()
-            }
-        } else {
-            pendingStartAfterPermission = false
-            pushLog("Microphone permission denied, cannot start conversation", RuntimeLogLevel.Error)
-        }
+    /** Surfaces a failure in the UI, not just the log panel. */
+    private fun showToast(text: String, kind: ToastKind = ToastKind.Error) {
+        toast = ToastMessage(text = text, kind = kind, serial = ++toastSerial)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        bootstrapSdk()
+        val cached = ConfigStore.load(applicationContext)
+        appIdInput = cached.appId
+        avatarIdInput = cached.avatarId
+        sessionTokenInput = cached.sessionToken
+        regionInput = cached.region
 
         setContent {
             MaterialTheme {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (configStep == 1) {
+                        ConfigurationScreen(
+                            appId = appIdInput,
+                            avatarId = avatarIdInput,
+                            sessionToken = sessionTokenInput,
+                            region = regionInput,
+                            regions = ConfigStore.regions,
+                            loading = initializing,
+                            errorMsg = configError,
+                            sessionTokenDocsUrl = sessionTokenDocsUrl,
+                            onAppIdChange = { appIdInput = it },
+                            onAvatarIdChange = { avatarIdInput = it },
+                            onSessionTokenChange = { sessionTokenInput = it },
+                            onRegionChange = { regionInput = it },
+                            onInitialize = { initializeSdkFromConfig() },
+                        )
+                    } else {
+                        PlaygroundContent()
+                    }
+
+                    ToastHost(
+                        message = toast,
+                        onDismiss = { toast = null },
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun PlaygroundContent() {
                 SdkModeScreen(
                     status = status,
                     errorMsg = errorMsg,
                     logs = logs,
-                    isListening = isListening,
+                    connected = connected,
                     isConnecting = isConnectingConversation,
-                    sessionTokenInput = sessionTokenInput,
-                    sessionTokenDocsUrl = sessionTokenDocsUrl,
-                    hasModelProvider = BuildConfig.OPENAI_USE_PROXY || BuildConfig.OPENAI_API_KEY.isNotBlank(),
+                    sendingPath = sendingPath,
                     canCreateAvatarView = sdkInitialized,
-                    onSessionTokenChange = { sessionTokenInput = it },
-                    onInitializeAvatar = { initializeAvatar() },
-                    onToggleConversation = {
-                        if (isListening) {
-                            stopConversation()
-                        } else {
-                            startConversation()
-                        }
-                    },
+                    onToggleConnection = { if (connected) disconnect() else connect() },
+                    onSendPcm = { asset -> sendPcm(asset) },
+                    onInterrupt = { interrupt() },
                     onAvatarViewCreated = { view ->
                         if (avatarView !== view) {
                             avatarView = view
@@ -190,50 +216,71 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 )
-            }
-        }
     }
 
-    private fun bootstrapSdk() {
-        if (sdkInitialized) return
-        if (BuildConfig.SPATIUS_APP_ID.isBlank()) {
-            status = LoadStatus.Error
-            errorMsg = "Missing SPATIUS_APP_ID"
-            pushLog("Initialization failed: $errorMsg", RuntimeLogLevel.Error)
+    /**
+     * Step 1 submit: initialize with what the user typed, then move to the
+     * playground. Nothing is initialized before this point, so the credentials
+     * that actually reach the SDK are always the ones on screen.
+     */
+    private fun initializeSdkFromConfig() {
+        val appId = appIdInput.trim()
+        val avatarId = avatarIdInput.trim()
+        val token = normalizedSessionToken(sessionTokenInput)
+
+        if (appId.isBlank() || avatarId.isBlank() || token.isBlank()) {
+            configError = "App ID, Avatar ID and Session Token are required"
             return
         }
 
+        initializing = true
+        configError = ""
+
         runCatching {
-            AvatarSDK.initialize(
-                applicationContext,
-                BuildConfig.SPATIUS_APP_ID,
+            // "auto" leaves `region` at its default so the SDK picks the
+            // closest serving region itself; an explicit choice forces it.
+            val configuration = if (regionInput == "auto") {
                 Configuration(
-                    region = parseRegion(BuildConfig.SPATIUS_REGION),
-                    audioFormat = AudioFormat(24000),
-                    drivingServiceMode = DrivingServiceMode.SDK,
-                    logLevel = LogLevel.INFO,
-                ),
-            )
+                    audioFormat = AudioFormat(16000),
+                    drivingServiceMode = DrivingServiceMode.DIRECT,
+                    logLevel = LogLevel.ALL,
+                )
+            } else {
+                Configuration(
+                    region = parseRegion(regionInput),
+                    audioFormat = AudioFormat(16000),
+                    drivingServiceMode = DrivingServiceMode.DIRECT,
+                    logLevel = LogLevel.ALL,
+                )
+            }
+            AvatarSDK.initialize(applicationContext, appId, configuration)
             AvatarManager.initialize(applicationContext)
+            AvatarSDK.sessionToken = token
+        }.onSuccess {
+            sessionTokenInput = token
             sdkInitialized = true
             status = LoadStatus.Idle
+            val config = AppConfig(appId, avatarId, token, regionInput)
+            activeConfig = config
+            ConfigStore.save(applicationContext, config)
+            initializing = false
+            configStep = 2
         }.onFailure {
-            status = LoadStatus.Error
-            errorMsg = it.message ?: it.javaClass.simpleName
-            pushLog("SDK pre-initialization failed: $errorMsg", RuntimeLogLevel.Error)
+            initializing = false
+            val msg = it.message ?: it.javaClass.simpleName
+            configError = msg
+            pushLog("SDK initialization failed: $msg", RuntimeLogLevel.Error)
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        stopConversation()
+        cancelSending()
         isConnectingConversation = false
-        processing.set(false)
         avatarSpeaking.set(false)
         connectionReady.set(false)
         connecting.set(false)
         teardownAvatarView()
-        openAiClient.close()
     }
 
     private fun initializeAvatar() {
@@ -243,9 +290,10 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (BuildConfig.SPATIUS_APP_ID.isBlank() || BuildConfig.SPATIUS_AVATAR_ID.isBlank()) {
+        val config = activeConfig
+        if (config == null) {
             status = LoadStatus.Error
-            errorMsg = "Missing SPATIUS_APP_ID or SPATIUS_AVATAR_ID"
+            errorMsg = "SDK is not configured"
             pushLog("Initialization failed: $errorMsg", RuntimeLogLevel.Error)
             return
         }
@@ -253,19 +301,19 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             status = LoadStatus.Loading
             errorMsg = ""
-            processing.set(false)
             avatarSpeaking.set(false)
             connectionReady.set(false)
             connecting.set(false)
+            connected = false
             disconnectByClient.set(false)
             lastConnectionStateText = ""
             lastConversationStateText = ""
-            stopConversation()
+            cancelSending()
             pushLog("Initializing Avatar...")
             safeCloseController()
 
             try {
-                if (!AvatarSDK.supportsCurrentDevice()) {
+                if (!AvatarSDK.isDeviceSupported()) {
                     error("Current device does not meet AvatarKit requirements (API24+, Vulkan)")
                 }
 
@@ -280,16 +328,15 @@ class MainActivity : ComponentActivity() {
                     pushLog("Applied manual Session Token")
                 }
 
+                // The configuration step is the only path into the playground,
+                // so the SDK is always initialized by the time we get here.
                 if (!sdkInitialized) {
-                    bootstrapSdk()
-                    if (!sdkInitialized) {
-                        error("SDK initialization failed")
-                    }
+                    error("SDK is not initialized")
                 }
 
                 var lastProgressBucket = -1
                 val avatar = withContext(Dispatchers.IO) {
-                    AvatarManager.load(BuildConfig.SPATIUS_AVATAR_ID) { progress ->
+                    AvatarManager.load(config.avatarId) { progress ->
                         if (progress is AvatarManager.LoadProgress.Downloading) {
                             val percent = (progress.progress * 100).toInt().coerceIn(0, 100)
                             val bucket = percent / 20
@@ -343,6 +390,7 @@ class MainActivity : ComponentActivity() {
                 normalized.contains("disconnected") -> {
                     connecting.set(false)
                     connectionReady.set(false)
+                    connected = false
                     isConnectingConversation = false
 
                     val closedByClient = disconnectByClient.getAndSet(false)
@@ -350,9 +398,9 @@ class MainActivity : ComponentActivity() {
                         pushLog("Connection state: $stateText (closed)")
                     } else {
                         pushLog("Connection state: $stateText (disconnected)", RuntimeLogLevel.Error)
-                        if (isListening) {
-                            stopConversation()
-                            pushLog("Connection dropped unexpectedly. Conversation stopped", RuntimeLogLevel.Error)
+                        if (sendingPath != null) {
+                            cancelSending()
+                            pushLog("Connection dropped unexpectedly. Sending stopped", RuntimeLogLevel.Error)
                         }
                     }
                 }
@@ -360,8 +408,10 @@ class MainActivity : ComponentActivity() {
                 normalized.contains("failed") -> {
                     connecting.set(false)
                     connectionReady.set(false)
+                    connected = false
                     isConnectingConversation = false
                     disconnectByClient.set(false)
+                    cancelSending()
                     pushLog("Connection state: $stateText (failed)", RuntimeLogLevel.Error)
                 }
 
@@ -369,12 +419,14 @@ class MainActivity : ComponentActivity() {
                     disconnectByClient.set(false)
                     connecting.set(false)
                     connectionReady.set(true)
+                    connected = true
                     pushLog("Connection state: $stateText (connected)")
                 }
 
                 else -> {
                     connecting.set(false)
                     connectionReady.set(false)
+                    connected = false
                     pushLog("Connection state: $stateText (unrecognized)", RuntimeLogLevel.Error)
                 }
             }
@@ -400,10 +452,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                ConversationState.Active -> {
-                    pushLog("Conversation active, waiting for playable content")
-                }
-
                 ConversationState.Paused -> {
                     pushLog("Conversation paused")
                 }
@@ -427,53 +475,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startConversation() {
-        if (isListening) return
+    /** Step one of the playground: bring the Direct Mode session up. */
+    private fun connect() {
+        if (connected || connecting.get()) return
         if (status != LoadStatus.Ready) {
             pushLog("Avatar is not ready", RuntimeLogLevel.Error)
             return
         }
-
-        if (normalizedSessionToken(sessionTokenInput).isEmpty()) {
-            pushLog("Please enter Session Token before starting conversation. Link: $sessionTokenDocsUrl", RuntimeLogLevel.Error)
-            return
-        }
-
-        if (BuildConfig.OPENAI_USE_PROXY && BuildConfig.OPENAI_PROXY_BASE_URL.isBlank()) {
-            pushLog("Missing OPENAI_PROXY_BASE_URL configuration", RuntimeLogLevel.Error)
-            return
-        }
-
-        if (!BuildConfig.OPENAI_USE_PROXY && BuildConfig.OPENAI_API_KEY.isBlank()) {
-            pushLog("Missing OPENAI_API_KEY configuration", RuntimeLogLevel.Error)
-            return
-        }
-
-        pushLog(
-            if (BuildConfig.OPENAI_USE_PROXY) {
-                "Model mode: local proxy"
-            } else {
-                "Model mode: direct OpenAI"
-            }
-        )
-
-        val granted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (!granted) {
-            pendingStartAfterPermission = true
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-
-        startConversationInternal()
-    }
-
-    private fun startConversationInternal() {
-        if (isListening) return
-        if (!conversationStarting.compareAndSet(false, true)) return
 
         lifecycleScope.launch {
             isConnectingConversation = true
@@ -483,59 +491,84 @@ class MainActivity : ComponentActivity() {
                     pushLog("Avatar controller unavailable", RuntimeLogLevel.Error)
                     return@launch
                 }
-
                 if (!ensureConnected(controller)) {
-                    pushLog("Connection not ready, cannot start conversation", RuntimeLogLevel.Error)
-                    return@launch
+                    pushLog("Connection not ready", RuntimeLogLevel.Error)
                 }
-
-                startRecorder()
             } finally {
                 isConnectingConversation = false
-                conversationStarting.set(false)
             }
         }
     }
 
-    private fun startRecorder() {
-        if (isListening) return
+    private fun disconnect() {
+        cancelSending()
+        disconnectByClient.set(true)
+        runCatching { avatarView?.controller?.close() }
+        connectionReady.set(false)
+        connecting.set(false)
+        connected = false
+        pushLog("Disconnected")
+    }
 
-        try {
-            val newRecorder = VadRecorder(
-                config = VadConfig(
-                    sampleRate = BuildConfig.MIC_SAMPLE_RATE,
-                    startThreshold = BuildConfig.VAD_START_THRESHOLD,
-                    stopThreshold = BuildConfig.VAD_STOP_THRESHOLD,
-                    silenceMs = BuildConfig.VAD_SILENCE_MS.toLong(),
-                    minSpeechMs = BuildConfig.VAD_MIN_SPEECH_MS.toLong(),
-                    maxSpeechMs = BuildConfig.VAD_MAX_SPEECH_MS.toLong(),
-                ),
-                shouldGate = { processing.get() || avatarSpeaking.get() },
-                onLog = { pushLog(it) },
-                onSegment = { pcm16 ->
-                    lifecycleScope.launch {
-                        processSegment(pcm16)
-                    }
+    /** Step two: stream one of the bundled clips to the avatar. */
+    private fun sendPcm(asset: PcmAsset) {
+        // Direct Mode has no session until connect() runs, so audio sent now
+        // would be dropped silently. Say so instead of leaving a dead button.
+        if (!connectionReady.get()) {
+            showToast("Please click Connect before sending audio.", ToastKind.Warning)
+            return
+        }
+        if (sendingPath != null) return
+
+        val controller = avatarView?.controller
+        if (controller == null) {
+            pushLog("Avatar controller unavailable", RuntimeLogLevel.Error)
+            return
+        }
+
+        sendingPath = asset.path
+        pushLog("Sending \"${asset.name}\"...")
+
+        sendJob = lifecycleScope.launch {
+            val data = runCatching { loadPcmAsset(applicationContext, asset.path) }
+                .getOrElse {
+                    sendingPath = null
+                    pushLog(
+                        "Failed to load ${asset.name}: ${it.message ?: it.javaClass.simpleName}",
+                        RuntimeLogLevel.Error,
+                    )
+                    return@launch
+                }
+
+            sendPcmChunks(
+                scope = lifecycleScope,
+                data = data,
+                controller = controller,
+                onDone = {
+                    sendingPath = null
+                    pushLog("Finished sending \"${asset.name}\"")
+                },
+                onError = { t ->
+                    sendingPath = null
+                    pushLog(
+                        "Failed to send audio: ${t.message ?: t.javaClass.simpleName}",
+                        RuntimeLogLevel.Error,
+                    )
                 },
             )
-
-            newRecorder.start(lifecycleScope)
-            recorder = newRecorder
-            isListening = true
-            pushLog("Microphone started, waiting for speech...")
-        } catch (t: Throwable) {
-            pushLog("Failed to start microphone: ${t.message ?: t.javaClass.simpleName}", RuntimeLogLevel.Error)
-            stopConversation()
         }
     }
 
-    private fun stopConversation() {
-        recorder?.stop()
-        recorder = null
-        if (isListening) {
-            isListening = false
-            pushLog("Conversation stopped")
-        }
+    private fun cancelSending() {
+        sendJob?.cancel()
+        sendJob = null
+        sendingPath = null
+    }
+
+    private fun interrupt() {
+        cancelSending()
+        runCatching { avatarView?.controller?.interrupt() }
+        pushLog("Interrupted")
     }
 
     private suspend fun ensureConnected(controller: AvatarController): Boolean {
@@ -591,98 +624,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun processSegment(pcm16: ByteArray) {
-        if (pcm16.isEmpty() || !processing.compareAndSet(false, true)) {
-            return
-        }
-
-        try {
-            val sizeKb = pcm16.size / 1024
-            pushLog("Speech segment ${sizeKb}KB, starting ASR...")
-
-            val text = withContext(Dispatchers.IO) {
-                openAiClient.transcribe(pcm16, BuildConfig.MIC_SAMPLE_RATE)
-            }.trim()
-
-            if (text.isEmpty()) {
-                pushLog("ASR did not return valid text")
-                return
-            }
-
-            pushLog("ASR transcript: \"$text\"")
-
-            val controller = avatarView?.controller
-            if (controller == null) {
-                pushLog("Avatar controller unavailable, skipping playback", RuntimeLogLevel.Error)
-                return
-            }
-
-            pushLog("Calling LLM (streaming)...")
-
-            val reply = coroutineScope {
-                val ttsTasks = ConcurrentHashMap<Int, kotlinx.coroutines.Deferred<ByteArray>>()
-                val sentenceCount = AtomicInteger(0)
-                val llmFinished = AtomicBoolean(false)
-                var pending = ""
-
-                fun enqueueSentence(sentence: String) {
-                    val normalized = sentence.trim()
-                    if (normalized.isEmpty()) return
-                    val index = sentenceCount.getAndIncrement()
-                    ttsTasks[index] = async(Dispatchers.IO) {
-                        openAiClient.synthesizePcm(normalized)
-                    }
-                }
-
-                val senderJob = launch(Dispatchers.IO) {
-                    var nextSendIndex = 0
-                    while (!llmFinished.get() || nextSendIndex < sentenceCount.get()) {
-                        val task = ttsTasks[nextSendIndex]
-                        if (task == null) {
-                            delay(10)
-                            continue
-                        }
-
-                        val pcm = task.await()
-                        val shouldEnd = llmFinished.get() && nextSendIndex == sentenceCount.get() - 1
-                        controller.send(pcm, shouldEnd)
-                        ttsTasks.remove(nextSendIndex)
-                        nextSendIndex += 1
-                    }
-
-                    if (sentenceCount.get() == 0) {
-                        controller.send(ByteArray(0), true)
-                    }
-                }
-
-                val fullReply = withContext(Dispatchers.IO) {
-                    openAiClient.runLlmStream(text) { chunk ->
-                        pending += chunk
-                        val (sentences, carry) = TextChunker.splitForTts(pending, flushTail = false)
-                        pending = carry
-                        for (sentence in sentences) {
-                            enqueueSentence(sentence)
-                        }
-                    }
-                }
-
-                val (tailSentences, _) = TextChunker.splitForTts(pending, flushTail = true)
-                for (sentence in tailSentences) {
-                    enqueueSentence(sentence)
-                }
-
-                llmFinished.set(true)
-                senderJob.join()
-                fullReply
-            }
-
-            pushLog("LLM reply: \"$reply\"")
-        } catch (t: Throwable) {
-            pushLog("Conversation failed: ${t.message ?: t.javaClass.simpleName}", RuntimeLogLevel.Error)
-        } finally {
-            processing.set(false)
-        }
-    }
 
     private fun safeCloseController() {
         val controller = avatarView?.controller ?: return
@@ -704,7 +645,6 @@ class MainActivity : ComponentActivity() {
         runCatching { controller?.onConversationState = null }
         runCatching { controller?.onError = null }
         runCatching { controller?.close() }
-        runCatching { controller?.cleanup() }
 
         avatarView = null
     }
@@ -720,6 +660,12 @@ class MainActivity : ComponentActivity() {
         }
         runOnUiThread {
             logs = listOf(line) + logs.take(79)
+            // Every error already funnels through here, so surfacing the toast
+            // at this one point keeps the log panel and the toast in step
+            // instead of tagging each call site individually.
+            if (isError) {
+                showToast(value)
+            }
         }
     }
 
@@ -851,28 +797,25 @@ private fun SdkModeScreen(
     status: LoadStatus,
     errorMsg: String,
     logs: List<String>,
-    isListening: Boolean,
+    connected: Boolean,
     isConnecting: Boolean,
-    sessionTokenInput: String,
-    sessionTokenDocsUrl: String,
-    hasModelProvider: Boolean,
+    sendingPath: String?,
     canCreateAvatarView: Boolean,
-    onSessionTokenChange: (String) -> Unit,
-    onInitializeAvatar: () -> Unit,
-    onToggleConversation: () -> Unit,
+    onToggleConnection: () -> Unit,
+    onSendPcm: (PcmAsset) -> Unit,
+    onInterrupt: () -> Unit,
     onAvatarViewCreated: (AvatarView) -> Unit,
 ) {
-    val context = LocalContext.current
-    val canStartConversation = status == LoadStatus.Ready && hasModelProvider
-    val talkButtonDisabled = !isListening && (!canStartConversation || isConnecting)
-    val talkButtonText = when {
-        isListening -> "End Conversation"
-        isConnecting -> "Authenticating..."
+    var showAudioHint by remember { mutableStateOf(false) }
+
+    val connectDisabled = !connected && (status != LoadStatus.Ready || isConnecting)
+    val connectButtonText = when {
+        connected -> "Disconnect"
+        isConnecting -> "Connecting..."
         status == LoadStatus.Loading -> "Loading..."
         status == LoadStatus.Error -> "Initialization failed"
         status == LoadStatus.Idle -> "Not initialized"
-        hasModelProvider -> "Start Conversation"
-        else -> "Missing model configuration"
+        else -> "Connect"
     }
 
     val chipText = when (status) {
@@ -973,73 +916,6 @@ private fun SdkModeScreen(
                 colors = CardDefaults.cardColors(containerColor = DS.panel),
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "Session Token (Manual Paste)",
-                        color = DS.title,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-
-                    OutlinedTextField(
-                        value = sessionTokenInput,
-                        onValueChange = onSessionTokenChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Enter Session Token", color = DS.muted, fontSize = 11.sp) },
-                        singleLine = true,
-                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White.copy(alpha = 0.92f),
-                            unfocusedContainerColor = Color.White.copy(alpha = 0.92f),
-                            focusedBorderColor = DS.blue.copy(alpha = 0.5f),
-                            unfocusedBorderColor = DS.panelBorder,
-                            focusedTextColor = DS.text,
-                            unfocusedTextColor = DS.text,
-                        ),
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sessionTokenDocsUrl)))
-                            }
-                        ) {
-                            Text(
-                                "Get Temporary Session Token",
-                                color = DS.blue,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = onInitializeAvatar,
-                            shape = RoundedCornerShape(8.dp),
-                        ) {
-                            Text("Reinitialize Avatar", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, DS.panelBorder, RoundedCornerShape(14.dp)),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = DS.panel),
-                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-            ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1053,25 +929,27 @@ private fun SdkModeScreen(
                     )
 
                     Button(
-                        onClick = onToggleConversation,
-                        enabled = !talkButtonDisabled,
+                        onClick = onToggleConnection,
+                        enabled = !connectDisabled,
                         shape = RoundedCornerShape(999.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isListening) {
-                                Color(0x33FF6B6B)
+                            // Solid fills: over the avatar a translucent button
+                            // reads as decoration and gets overlooked.
+                            containerColor = if (connected) {
+                                Color(0xFFD24545)
                             } else {
-                                Color.White.copy(alpha = 0.26f)
+                                DS.blue
                             },
                             contentColor = Color.White,
-                            disabledContainerColor = Color.White.copy(alpha = 0.20f),
-                            disabledContentColor = Color.White.copy(alpha = 0.78f),
+                            disabledContainerColor = Color(0xFF7C8AA5),
+                            disabledContentColor = Color.White.copy(alpha = 0.85f),
                         ),
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 24.dp)
                             .fillMaxWidth(0.56f),
                     ) {
-                        Text(talkButtonText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(connectButtonText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
 
@@ -1085,10 +963,106 @@ private fun SdkModeScreen(
                 }
             }
 
-            Card(
+            // Logs and the clip list share the row so neither squeezes the
+            // other out: equal width, equal height.
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+            Card(
+                modifier = Modifier
                     .weight(1f)
+                    .fillMaxHeight()
+                    .border(1.dp, DS.panelBorder, RoundedCornerShape(14.dp)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = DS.panel),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = "Send Audio",
+                                color = DS.title,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "?",
+                                color = DS.muted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .border(1.dp, DS.muted, RoundedCornerShape(999.dp))
+                                    .clickable { showAudioHint = true }
+                                    .padding(horizontal = 5.dp, vertical = 1.dp),
+                            )
+                        }
+                        if (sendingPath != null) {
+                            TextButton(onClick = onInterrupt) {
+                                Text("Interrupt", color = DS.chipErrFg, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = if (connected) {
+                            "Tap a clip to stream it to the avatar."
+                        } else {
+                            "Connect first — Direct Mode has no session until then."
+                        },
+                        color = DS.muted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(PCM_ASSETS) { asset ->
+                            val isSending = sendingPath == asset.path
+                            OutlinedButton(
+                                onClick = { onSendPcm(asset) },
+                                enabled = sendingPath == null || isSending,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isSending) DS.blue else Color.Transparent,
+                                    contentColor = if (isSending) Color.White else DS.text,
+                                ),
+                            ) {
+                                Text(
+                                    text = if (isSending) "Sending: ${asset.name}" else asset.name,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
                     .border(1.dp, DS.panelBorder, RoundedCornerShape(14.dp)),
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = DS.panel),
@@ -1147,6 +1121,221 @@ private fun SdkModeScreen(
                     }
                 }
             }
+            }
         }
+
+        if (showAudioHint) {
+            AlertDialog(
+                onDismissRequest = { showAudioHint = false },
+                title = { Text("Sending audio") },
+                text = { Text(AUDIO_SOURCE_HINT) },
+                confirmButton = {
+                    TextButton(onClick = { showAudioHint = false }) { Text("Got it") }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConfigurationScreen(
+    appId: String,
+    avatarId: String,
+    sessionToken: String,
+    region: String,
+    regions: List<String>,
+    loading: Boolean,
+    errorMsg: String,
+    sessionTokenDocsUrl: String,
+    onAppIdChange: (String) -> Unit,
+    onAvatarIdChange: (String) -> Unit,
+    onSessionTokenChange: (String) -> Unit,
+    onRegionChange: (String) -> Unit,
+    onInitialize: () -> Unit,
+) {
+    val context = LocalContext.current
+    val canInit = appId.isNotBlank() && avatarId.isNotBlank() && sessionToken.isNotBlank()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DS.bg),
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item {
+                Text(
+                    text = "AvatarKit Direct Mode Demo",
+                    color = DS.title,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+            item {
+                Text(
+                    text = "Drive the avatar with your voice and see lip-sync in action.",
+                    color = DS.muted,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            item {
+                ConfigField(
+                    label = "App ID *",
+                    value = appId,
+                    onValueChange = onAppIdChange,
+                    placeholder = "app_xxx",
+                    hint = "Get your App ID from the Developer Platform",
+                )
+            }
+            item {
+                ConfigField(
+                    label = "Avatar ID *",
+                    value = avatarId,
+                    onValueChange = onAvatarIdChange,
+                    placeholder = "avatar uuid",
+                    hint = "Pick a public avatar from the Avatar Library",
+                )
+            }
+            item {
+                ConfigField(
+                    label = "Session Token *",
+                    value = sessionToken,
+                    onValueChange = onSessionTokenChange,
+                    placeholder = "Your session token",
+                    hint = "Required for server communication in Direct Mode",
+                    isPassword = true,
+                )
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Region",
+                        color = DS.text,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        regions.forEach { r ->
+                            val selected = r == region
+                            OutlinedButton(
+                                onClick = { onRegionChange(r) },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (selected) DS.blue else Color.Transparent,
+                                    contentColor = if (selected) Color.White else DS.text,
+                                ),
+                            ) {
+                                Text(r, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    Text(
+                        text = "\"auto\" lets the SDK pick the closest serving region.",
+                        color = DS.muted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+
+            if (errorMsg.isNotBlank()) {
+                item {
+                    Text(
+                        text = errorMsg,
+                        color = DS.chipErrFg,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(DS.logErrBg)
+                            .padding(10.dp),
+                    )
+                }
+            }
+
+            item {
+                Button(
+                    onClick = onInitialize,
+                    enabled = canInit && !loading,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = DS.blue),
+                ) {
+                    Text(
+                        text = if (loading) "Initializing..." else "Initialize SDK",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+
+            item {
+                TextButton(onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sessionTokenDocsUrl)))
+                    }
+                }) {
+                    Text("How to obtain a Session Token", color = DS.blue, fontSize = 12.sp)
+                }
+            }
+
+            item {
+                Image(
+                    painter = painterResource(id = R.drawable.api_key_guide),
+                    contentDescription = "Where to find your App ID and Token",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp)),
+                )
+            }
+
+            item {
+                Image(
+                    painter = painterResource(id = R.drawable.public_avatar_guide),
+                    contentDescription = "Where to find a public Avatar ID",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp)),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfigField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    hint: String,
+    isPassword: Boolean = false,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            color = DS.text,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            placeholder = { Text(placeholder, color = DS.muted, fontSize = 13.sp) },
+            visualTransformation = if (isPassword) {
+                PasswordVisualTransformation()
+            } else {
+                VisualTransformation.None
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = DS.blue,
+                unfocusedBorderColor = DS.panelBorder,
+            ),
+        )
+        Text(text = hint, color = DS.muted, style = MaterialTheme.typography.bodySmall)
     }
 }

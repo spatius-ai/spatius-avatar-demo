@@ -7,6 +7,15 @@ export async function loadPcmFile(path: string): Promise<ArrayBuffer> {
   return res.arrayBuffer()
 }
 
+/**
+ * Feed the clip to the SDK in chunks, the way a live TTS stream would arrive.
+ *
+ * The chunking here is what matters, not the file: `send` accepts any PCM16 at
+ * the configured sample rate, so a microphone or TTS stream feeds it the same
+ * way — hand it bytes as they arrive and mark the final chunk with `end`.
+ * Opus uplink encoding runs off the main thread, so pacing here does not block
+ * rendering.
+ */
 export function sendPcmChunks(
   data: ArrayBuffer,
   send: (chunk: Uint8Array, end: boolean) => void,

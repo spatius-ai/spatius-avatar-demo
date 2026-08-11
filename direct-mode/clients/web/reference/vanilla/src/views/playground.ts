@@ -1,7 +1,8 @@
+import { pushToast } from '../utils/toast'
 import type { AppConfig } from './configuration'
 import { AvatarManagerService } from '../avatarManager'
 import { DEFAULT_CHARACTERS } from '../data/characters'
-import { PCM_ASSETS } from '../data/audioAssets'
+import { PCM_ASSETS, AUDIO_SOURCE_HINT } from '../data/audioAssets'
 import { loadPcmFile, sendPcmChunks } from '../utils/audio'
 
 const MAX_AVATARS = 4
@@ -12,7 +13,7 @@ export function createPlayground(_config: AppConfig): HTMLElement {
   let multiMode = false
   let loadingCharId: string | null = null
   let loadingProgress = 0
-  let sending = false
+  let sendingPath: string | null = null
   let cancelSend: (() => void) | null = null
   let adding = false
   let customId = ''
@@ -312,27 +313,41 @@ export function createPlayground(_config: AppConfig): HTMLElement {
         try {
           await (ctrl as any).initializeAudioContext()
           await ctrl.start()
-        } catch (e: any) { console.error('Start failed:', e) }
+        } catch (e: any) { console.error('Start failed:', e); pushToast(`Failed to connect: ${e?.message ?? e}`) }
       })
       panel.appendChild(startBtn)
 
       const audioList = document.createElement('div')
       audioList.className = 'audio-list'
-      audioList.innerHTML = '<h4>Audio Files</h4>'
+      const audioHeading = document.createElement('h4')
+      audioHeading.textContent = 'Audio Files'
+      const audioHint = document.createElement('span')
+      audioHint.className = 'audio-hint'
+      // textContent, not innerHTML: the copy contains quotes and an em dash.
+      audioHint.textContent = '?'
+      audioHint.title = AUDIO_SOURCE_HINT
+      audioHeading.appendChild(audioHint)
+      audioList.appendChild(audioHeading)
       for (const a of PCM_ASSETS) {
         const btn = document.createElement('button')
         btn.className = 'secondary full-width audio-btn'
-        btn.disabled = !connected || sending
-        btn.textContent = sending ? '...' : `\u25B6 ${a.name}`
+        btn.disabled = sendingPath !== null
+        btn.textContent = sendingPath === a.path ? '...' : `\u25B6 ${a.name}`
         btn.addEventListener('click', async () => {
-          if (!ctrl || sending) return
-          sending = true
+          // Direct Mode has no session until start() runs, so audio sent now
+          // would be dropped silently. Say so instead of a dead button.
+          if (!connected) {
+            pushToast('Please click Start to connect before sending audio.', 'warning')
+            return
+          }
+          if (!ctrl || sendingPath !== null) return
+          sendingPath = a.path
           renderControlPanel()
           try {
-            await (ctrl as any).initializeAudioContext()
+            // The audio context is already warmed up when connecting.
             const data = await loadPcmFile(a.path)
-            cancelSend = sendPcmChunks(data, (chunk, end) => ctrl.send(chunk.buffer as ArrayBuffer, end), () => { sending = false; renderControlPanel() })
-          } catch (e: any) { console.error('Send failed:', e); sending = false; renderControlPanel() }
+            cancelSend = sendPcmChunks(data, (chunk, end) => ctrl.send(chunk.buffer as ArrayBuffer, end), () => { sendingPath = null; renderControlPanel() })
+          } catch (e: any) { console.error('Send failed:', e); pushToast(`Failed to send audio: ${e?.message ?? e}`); sendingPath = null; renderControlPanel() }
         })
         audioList.appendChild(btn)
       }
@@ -357,7 +372,7 @@ export function createPlayground(_config: AppConfig): HTMLElement {
       intBtn.addEventListener('click', () => {
         ctrl?.interrupt()
         if (cancelSend) { cancelSend(); cancelSend = null }
-        sending = false
+        sendingPath = null
         renderControlPanel()
       })
       row.append(pauseBtn, resumeBtn, intBtn)
@@ -374,7 +389,7 @@ export function createPlayground(_config: AppConfig): HTMLElement {
     if (av && av.connectionState !== 'connected' && cancelSend) {
       cancelSend()
       cancelSend = null
-      sending = false
+      sendingPath = null
     }
     updateActiveCellHighlight()
     renderCenterHeader()

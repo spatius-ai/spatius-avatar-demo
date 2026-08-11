@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   AvatarSDK,
   DrivingServiceMode,
@@ -29,19 +29,31 @@ function saveCache(appId: string, token: string, env: string) {
   } catch { /* ignore */ }
 }
 
+const REGIONS = ['auto', 'us-west', 'cn-beijing'] as const
+
+// 'auto' lets the SDK pick the closest serving region at initialize time.
 function normalizeRegion(env?: string) {
-  return env === 'us-west' ? 'us-west' : 'us-west'
+  return REGIONS.includes(env as typeof REGIONS[number]) ? env! : 'auto'
 }
 
 export default function Configuration({ mode, onInitialized }: Props) {
-  const cached = loadCached()
-  const [appId, setAppId] = useState(cached.appId ?? '')
-  const [token, setToken] = useState(cached.token ?? '')
-  const [env, setEnv] = useState<string>(normalizeRegion(cached.env))
+  // Reading localStorage during render breaks under SSR: the server renders
+  // empty values, and hydration keeps that state even though the inputs look
+  // filled — leaving the submit button disabled on a return visit.
+  const [appId, setAppId] = useState('')
+  const [token, setToken] = useState('')
+  const [env, setEnv] = useState<string>('auto')
+
+  useEffect(() => {
+    const cached = loadCached()
+    if (cached.appId) setAppId(cached.appId)
+    if (cached.token) setToken(cached.token)
+    setEnv(normalizeRegion(cached.env))
+  }, [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canInit = appId.trim() && token.trim()
+  const canInit = Boolean(appId.trim() && token.trim())
 
   const handleInit = async () => {
     if (!canInit) return
@@ -49,7 +61,8 @@ export default function Configuration({ mode, onInitialized }: Props) {
     setError(null)
     try {
       await AvatarSDK.initialize(appId.trim(), {
-        region: env,
+        // Omitting region entirely is what triggers the SDK's automatic pick.
+        ...(env === 'auto' ? {} : { region: env }),
         drivingServiceMode: mode,
         audioFormat: { channelCount: 1, sampleRate: 16000 },
         logLevel: LogLevel.all,
@@ -104,8 +117,10 @@ export default function Configuration({ mode, onInitialized }: Props) {
 
             <div className="field">
               <label>Region</label>
-              <select value={env} onChange={e => setEnv(e.target.value as string)}>
-                <option value={'us-west'}>us-west</option>
+              <select value={env} onChange={e => setEnv(e.target.value)}>
+                {REGIONS.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
               </select>
             </div>
 

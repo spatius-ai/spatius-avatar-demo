@@ -10,7 +10,7 @@ export interface AppConfig {
   region: string
 }
 
-const MODE = DrivingServiceMode.sdk
+const MODE = DrivingServiceMode.direct
 
 export default function App() {
   const [step, setStep] = useState<1 | 2>(1)

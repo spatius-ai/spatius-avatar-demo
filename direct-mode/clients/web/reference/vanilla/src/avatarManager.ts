@@ -1,3 +1,4 @@
+import { pushToast } from './utils/toast'
 import {
   AvatarManager,
   AvatarView,
@@ -79,7 +80,10 @@ export class AvatarManagerService {
       const view = new AvatarView(avatar, container)
       view.controller.onConnectionState = (state: ConnectionState) => this.updateAvatar(uid, { connectionState: state })
       view.controller.onConversationState = (state: ConversationState) => this.updateAvatar(uid, { conversationState: state })
-      view.controller.onError = (err: Error) => this.updateAvatar(uid, { error: err.message })
+      view.controller.onError = (err: Error) => {
+        this.updateAvatar(uid, { error: err.message })
+        pushToast(err.message)
+      }
       this._views.set(uid, view)
       this.updateAvatar(uid, { view, loading: false })
       return uid

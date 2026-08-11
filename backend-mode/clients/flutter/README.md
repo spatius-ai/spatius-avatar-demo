@@ -33,6 +33,13 @@ Flutter client for [Backend Mode](../../README.md). All AI processing (ASR → L
    flutter run
    ```
 
+   > **Running on a physical iOS device?** This project ships with the Spatius
+   > signing identity, which your Apple developer account cannot use. Open
+   > `ios/Runner.xcworkspace` in Xcode, go to **Runner → Signing & Capabilities**,
+   > set **Team** to your own account, and change **Bundle Identifier** to
+   > something unique (for example `com.yourname.avatarDemo`). The iOS Simulator
+   > needs no signing, so it is the fastest way to try the demo.
+
    Run on Android:
 
    ```bash

@@ -28,8 +28,11 @@ function saveCache(appId: string, token: string, env: string) {
   } catch { /* ignore */ }
 }
 
+const REGIONS = ['auto', 'us-west', 'cn-beijing'] as const
+
+// 'auto' lets the SDK pick the closest serving region at initialize time.
 function normalizeRegion(env?: string) {
-  return env === 'us-west' ? 'us-west' : 'us-west'
+  return REGIONS.includes(env as typeof REGIONS[number]) ? env! : 'auto'
 }
 
 export default function Configuration({ onInitialized }: Props) {
@@ -48,8 +51,8 @@ export default function Configuration({ onInitialized }: Props) {
     setError(null)
     try {
       await AvatarSDK.initialize(appId.trim(), {
-        region: env,
-        drivingServiceMode: DrivingServiceMode.sdk,
+        ...(env === 'auto' ? {} : { region: env }),
+        drivingServiceMode: DrivingServiceMode.direct,
         audioFormat: { channelCount: 1, sampleRate: 16000 },
         logLevel: LogLevel.all,
       })
@@ -88,7 +91,9 @@ export default function Configuration({ onInitialized }: Props) {
             <div className="field">
               <label>Region</label>
               <select value={env} onChange={e => setEnv(e.target.value as string)}>
-                <option value={'us-west'}>us-west</option>
+                {REGIONS.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
               </select>
             </div>
             {error && <div className="config-error">{error}</div>}

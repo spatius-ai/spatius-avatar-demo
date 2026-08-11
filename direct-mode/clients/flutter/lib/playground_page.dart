@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:spatius/avatar_kit.dart' hide ConnectionState, Transform;
+import 'package:spatius_avatarkit/spatius_avatarkit.dart' hide ConnectionState, Transform;
 
 import 'avatar_view_model.dart';
 import 'characters.dart';
@@ -26,15 +26,51 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   void initState() {
     super.initState();
     _vm.addListener(_onVmChanged);
+    _vm.onToast = _showToast;
   }
 
   void _onVmChanged() {
     if (mounted) setState(() {});
   }
 
+  void _showAudioHint() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sending audio'),
+        content: const Text(audioSourceHint),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showToast(ToastMessage message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    // Replace rather than queue: a stale message behind the current one is
+    // noise, not history.
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message.text),
+        backgroundColor: message.kind == ToastKind.warning
+            ? const Color(0xFF8A5A00)
+            : const Color(0xFFB3261E),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _vm.removeListener(_onVmChanged);
+    _vm.onToast = null;
     _vm.close();
     _vm.dispose();
     _customIdController.dispose();
@@ -201,6 +237,12 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
                 const Text(
                   'Audio Files',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: _showAudioHint,
+                  child: const Icon(Icons.help_outline,
+                      size: 14, color: Colors.grey),
                 ),
                 const Spacer(),
                 if (_vm.isSendingAudio)

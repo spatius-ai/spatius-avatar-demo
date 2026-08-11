@@ -8,7 +8,7 @@ struct AvatarViewRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> AvatarView {
         let avatarView = AvatarView(avatar: avatar)
         avatarView.isOpaque = false
-        avatarView.contentTransform = .identity
+        avatarView.avatarTransform = .identity
         onCreated(avatarView.controller)
         return avatarView
     }

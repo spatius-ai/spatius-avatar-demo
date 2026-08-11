@@ -21,6 +21,11 @@ targets:
         IPHONEOS_DEPLOYMENT_TARGET: "16.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         OTHER_LDFLAGS: ["-lz", "-lc++"]
+        # Running on a device needs your own Apple developer team. Export
+        # DEVELOPMENT_TEAM before `xcodegen generate`, or set the team in
+        # Xcode's Signing & Capabilities. The simulator builds without it.
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+        CODE_SIGN_STYLE: Automatic
       configs:
         debug:
           FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]: "$(PROJECT_DIR)/AvatarKit.xcframework/ios-arm64"
@@ -29,8 +34,12 @@ targets:
           FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]: "$(PROJECT_DIR)/AvatarKit.xcframework/ios-arm64"
           FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]: "$(PROJECT_DIR)/AvatarKit.xcframework/ios-arm64-simulator"
     dependencies:
+      # AvatarKit is a dynamic framework (@rpath install name), so it has to
+      # ship inside the app bundle — without embedding, dyld can't find it at
+      # launch on device.
       - framework: AvatarKit.xcframework
-        embed: false
+        embed: true
+        codeSign: true
     preBuildScripts:
       - name: Download AvatarKit
         script: |
@@ -39,8 +48,8 @@ targets:
           FRAMEWORK_PATH="${PROJECT_DIR}/AvatarKit.xcframework"
           ZIP_PATH="${PROJECT_DIR}/AvatarKit.xcframework.zip"
           CHECKSUM_FILE="${PROJECT_DIR}/.avatarkit_checksum"
-          SPATIUS_AVATARKIT_IOS_URL="${SPATIUS_AVATARKIT_IOS_URL:-https://github.com/spatius-ai/avatarkit-ios-release/releases/download/v1.0.0/AvatarKit_202605190156.zip}"
-          SPATIUS_AVATARKIT_IOS_CHECKSUM="${SPATIUS_AVATARKIT_IOS_CHECKSUM:-332f1826a9872adfe0f0b21ecbf364b72491aac3bb71238eb9808a2620df1563}"
+          SPATIUS_AVATARKIT_IOS_URL="${SPATIUS_AVATARKIT_IOS_URL:-https://github.com/spatius-ai/avatarkit-ios-release/releases/download/v1.3.2/AvatarKit_202608072023.zip}"
+          SPATIUS_AVATARKIT_IOS_CHECKSUM="${SPATIUS_AVATARKIT_IOS_CHECKSUM:-cf0a2a3166f7648a038a864f08c72837f1b84d5c06bcdd7adf338d55d56b3a0e}"
 
           NEED_DOWNLOAD=false
 

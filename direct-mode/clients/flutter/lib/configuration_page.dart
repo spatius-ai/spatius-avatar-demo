@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:spatius/avatar_kit.dart' hide ConnectionState;
+import 'package:spatius_avatarkit/spatius_avatarkit.dart' hide ConnectionState;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'playground_page.dart';
+
+const _developerPlatformUrl = 'https://app.spatius.ai';
 
 class ConfigurationPage extends StatefulWidget {
   const ConfigurationPage({super.key});
@@ -14,7 +17,7 @@ class ConfigurationPage extends StatefulWidget {
 class _ConfigurationPageState extends State<ConfigurationPage> {
   final _appIdController = TextEditingController();
   final _tokenController = TextEditingController();
-  String _selectedRegion = 'us-west';
+  String _selectedRegion = 'auto';
   bool _isInitializing = false;
   String? _errorMessage;
 
@@ -24,12 +27,17 @@ class _ConfigurationPageState extends State<ConfigurationPage> {
     _loadSavedConfig();
   }
 
+  static const _regions = ['auto', 'us-west', 'cn-beijing'];
+
   Future<void> _loadSavedConfig() async {
     final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('region');
     setState(() {
       _appIdController.text = prefs.getString('appID') ?? '';
       _tokenController.text = prefs.getString('sessionToken') ?? '';
-      _selectedRegion = prefs.getString('region') ?? 'us-west';
+      // A value cached by an older build may no longer be offered; falling
+      // back keeps SegmentedButton from asserting on an unknown selection.
+      _selectedRegion = _regions.contains(saved) ? saved! : 'auto';
     });
   }
 
@@ -38,6 +46,17 @@ class _ConfigurationPageState extends State<ConfigurationPage> {
     await prefs.setString('appID', _appIdController.text.trim());
     await prefs.setString('sessionToken', _tokenController.text.trim());
     await prefs.setString('region', _selectedRegion);
+  }
+
+  Future<void> _openDeveloperPlatform() async {
+    final uri = Uri.parse(_developerPlatformUrl);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open $_developerPlatformUrl')),
+        );
+      }
+    }
   }
 
   bool get _canInit {
@@ -59,7 +78,7 @@ class _ConfigurationPageState extends State<ConfigurationPage> {
         configuration: Configuration(
           region: _selectedRegion,
           audioFormat: const AudioFormat(sampleRate: 16000),
-          drivingServiceMode: DrivingServiceMode.sdk,
+          drivingServiceMode: DrivingServiceMode.direct,
           logLevel: LogLevel.all,
         ),
       );
@@ -98,6 +117,17 @@ class _ConfigurationPageState extends State<ConfigurationPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Where to find the App ID and Session Token — tapping opens the
+            // developer platform the screenshot is pointing at.
+            GestureDetector(
+              onTap: _openDeveloperPlatform,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.asset('assets/api-key-guide.png'),
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // App ID
             const Text('App ID',
                 style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey)),
@@ -139,12 +169,18 @@ class _ConfigurationPageState extends State<ConfigurationPage> {
             const SizedBox(height: 8),
             SegmentedButton<String>(
               segments: const [
+                ButtonSegment(value: 'auto', label: Text('auto')),
                 ButtonSegment(value: 'us-west', label: Text('us-west')),
-                ButtonSegment(value: 'cn', label: Text('cn')),
+                ButtonSegment(value: 'cn-beijing', label: Text('cn-beijing')),
               ],
               selected: {_selectedRegion},
               onSelectionChanged: (v) =>
                   setState(() => _selectedRegion = v.first),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '"auto" picks the closest serving region at initialization.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 24),
 

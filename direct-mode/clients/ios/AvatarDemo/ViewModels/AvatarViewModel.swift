@@ -3,6 +3,14 @@ import Combine
 import AVFoundation
 import AvatarKit
 
+/// Shown next to the clip list so nobody reads the bundled files as the limit of
+/// what Direct Mode accepts.
+let audioSourceHint = """
+These clips are bundled samples, not a limitation. send() takes any PCM16 audio \
+at the configured sample rate — stream it live from a microphone, a TTS service, \
+or your own pipeline the same way. The demo ships files so it runs without extra setup.
+"""
+
 @MainActor class AvatarViewModel: ObservableObject {
     @Published var connectionState: String = "\(ConnectionState.disconnected)"
     @Published var conversationState: String = "\(ConversationState.idle)"
@@ -10,6 +18,7 @@ import AvatarKit
     @Published var isSendingAudio = false
     @Published var currentlyPlayingFile: String?
     @Published var avatar: Avatar?
+    @Published var toast: ToastMessage?
 
     let audioFiles: [String]
     private var isConnected = false
@@ -52,13 +61,25 @@ import AvatarKit
         }
         avatarController?.onError = { [weak self] error in
             self?.errorMessage = error.localizedDescription
+            self?.toast = ToastMessage(text: error.localizedDescription)
         }
     }
 
     func start() { avatarController?.start() }
 
+    /// Streams a bundled clip to the avatar.
+    ///
+    /// The chunking is what matters, not the file: `send` accepts any PCM16 at the
+    /// configured sample rate, so a microphone or TTS stream feeds it the same way —
+    /// hand it bytes as they arrive and mark the final chunk with `end: true`.
     func sendAudioFile(_ filename: String) {
-        guard let controller = avatarController, isConnected else { return }
+        // Direct Mode has no session until start() runs, so audio sent now
+        // would be dropped silently. Say so instead of leaving a dead button.
+        guard isConnected else {
+            toast = ToastMessage(text: "Please tap Start to connect before sending audio.", kind: .warning)
+            return
+        }
+        guard let controller = avatarController else { return }
         cancelSending()
         controller.interrupt()
 
@@ -66,6 +87,7 @@ import AvatarKit
         guard let url = Bundle.main.url(forResource: name, withExtension: "pcm"),
               let audioData = try? Data(contentsOf: url) else {
             errorMessage = "Cannot read \(filename)"
+            toast = ToastMessage(text: "Cannot read \(filename)")
             return
         }
 

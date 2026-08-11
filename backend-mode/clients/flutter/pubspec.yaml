@@ -10,7 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  spatius: ^1.0.0
+  spatius_avatarkit: ^1.3.3
   web_socket_channel: ^3.0.1
   record: ^6.2.0
   permission_handler: ^11.3.1

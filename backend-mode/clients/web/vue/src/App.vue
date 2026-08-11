@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Toast from './components/Toast.vue'
 import { ref, onMounted } from 'vue'
 import { AvatarSDK, DrivingServiceMode, LogLevel } from '@spatius/avatarkit'
 import Playground from './views/Playground.vue'
@@ -43,7 +44,7 @@ onMounted(async () => {
 
   try {
     await AvatarSDK.initialize(appId, {
-      drivingServiceMode: DrivingServiceMode.host,
+      drivingServiceMode: DrivingServiceMode.backend,
       audioFormat: { channelCount: 1, sampleRate: 16000 },
       logLevel: LogLevel.all,
       ...(region ? { region } : {}),
@@ -65,4 +66,5 @@ onMounted(async () => {
     </div>
     <Playground v-if="ready" />
   </div>
+  <Toast />
 </template>

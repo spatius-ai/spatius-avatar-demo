@@ -1,3 +1,4 @@
+import { pushToast } from './useToast'
 import { ref, shallowRef, computed, onUnmounted } from 'vue'
 import {
   AvatarManager,
@@ -88,6 +89,7 @@ export function useAvatarManager() {
         avatars.value = avatars.value.map(a =>
           a.uid === uid ? { ...a, error: err.message } : a
         )
+        pushToast(err.message)
       }
 
       viewRefs.set(uid, view)

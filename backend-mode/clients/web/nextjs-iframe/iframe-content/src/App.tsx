@@ -25,7 +25,7 @@ export default function App() {
       .then((config) =>
         AvatarSDK.initialize(config.appId, {
           region: config.region === 'us-west' ? 'us-west' : 'us-west',
-          drivingServiceMode: DrivingServiceMode.host,
+          drivingServiceMode: DrivingServiceMode.backend,
           audioFormat: { channelCount: 1, sampleRate: 16000 },
           logLevel: LogLevel.all,
         })

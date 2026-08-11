@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { pushToast } from '../composables/useToast'
 import { ref, computed, watch } from 'vue'
 import type { AvatarController } from '@spatius/avatarkit'
 import type { AvatarInstance } from '../composables/useAvatarSDK'
-import { PCM_ASSETS } from '../data/audioAssets'
+import { PCM_ASSETS, AUDIO_SOURCE_HINT } from '../data/audioAssets'
 import { loadPcmFile, sendPcmChunks } from '../utils/audio'
 
 interface AvatarSlot {
@@ -23,7 +24,10 @@ const emit = defineEmits<{
   slotSelect: [uid: string]
 }>()
 
-const sending = ref(false)
+// Track which clip is playing, not just that one is: swapping every button's
+// label at once resizes them and reflows the panel, which stutters the canvas.
+const sendingPath = ref<string | null>(null)
+const sending = computed(() => sendingPath.value !== null)
 const sdkCancelRef = ref<(() => void) | null>(null)
 
 const connected = computed(() => props.activeAvatar?.connectionState === 'connected')
@@ -36,23 +40,31 @@ async function handleStart() {
     await props.activeController.start()
   } catch (e: any) {
     console.error('Start failed:', e)
+    pushToast(`Failed to connect: ${e?.message ?? e}`)
   }
 }
 
 async function handleSendPcm(path: string) {
+  // Direct Mode has no session until start() runs, so audio sent now would be
+  // dropped silently. Say so instead of leaving a dead button.
+  if (!connected.value) {
+    pushToast('Please click Start to connect before sending audio.', 'warning')
+    return
+  }
   if (!props.activeController || sending.value) return
-  sending.value = true
+  sendingPath.value = path
   try {
-    await (props.activeController as any).initializeAudioContext()
+    // The audio context is already warmed up by handleStart.
     const data = await loadPcmFile(path)
     sdkCancelRef.value = sendPcmChunks(
       data,
       (chunk, end) => props.activeController!.send(chunk.buffer as ArrayBuffer, end),
-      () => { sending.value = false },
+      () => { sendingPath.value = null },
     )
   } catch (e: any) {
     console.error('Send failed:', e)
-    sending.value = false
+    pushToast(`Failed to send audio: ${e?.message ?? e}`)
+    sendingPath.value = null
   }
 }
 
@@ -61,7 +73,7 @@ function handleResume() { props.activeController?.resume() }
 function handleInterrupt() {
   props.activeController?.interrupt()
   if (sdkCancelRef.value) { sdkCancelRef.value(); sdkCancelRef.value = null }
-  sending.value = false
+  sendingPath.value = null
 }
 
 // Cancel ongoing audio send when disconnected
@@ -69,7 +81,7 @@ watch(connected, (val) => {
   if (!val && sdkCancelRef.value) {
     sdkCancelRef.value()
     sdkCancelRef.value = null
-    sending.value = false
+    sendingPath.value = null
   }
 })
 </script>
@@ -124,15 +136,18 @@ watch(connected, (val) => {
       </button>
 
       <div class="audio-list">
-        <h4>Audio Files</h4>
+        <h4>
+          Audio Files
+          <span class="audio-hint" :title="AUDIO_SOURCE_HINT">?</span>
+        </h4>
         <button
           v-for="a in PCM_ASSETS"
           :key="a.path"
           class="secondary full-width audio-btn"
-          :disabled="!connected || sending"
+          :disabled="sending"
           @click="handleSendPcm(a.path)"
         >
-          {{ sending ? '...' : `&#9654; ${a.name}` }}
+          {{ sendingPath === a.path ? '...' : `&#9654; ${a.name}` }}
         </button>
       </div>
     </template>

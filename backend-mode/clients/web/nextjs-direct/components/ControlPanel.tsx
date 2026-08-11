@@ -18,6 +18,7 @@ interface Props {
   avatarSlots?: AvatarSlot[]
   activeUid?: string | null
   onSlotSelect?: (uid: string) => void
+  onNotify?: (text: string, kind?: 'error' | 'warning') => void
 }
 
 const BACKEND_MODE_URL = process.env.NEXT_PUBLIC_BACKEND_MODE_WS_URL || 'ws://localhost:8765/ws/agent'
@@ -36,7 +37,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-export default function ControlPanel({ activeAvatar, activeController, multiMode, avatarSlots, activeUid, onSlotSelect }: Props) {
+export default function ControlPanel({ activeAvatar, activeController, multiMode, avatarSlots, activeUid, onSlotSelect, onNotify }: Props) {
   const [backendConnected, setHostConnected] = useState(false)
   const [backendConnecting, setHostConnecting] = useState(false)
   const [backendMicActive, setHostMicActive] = useState(false)

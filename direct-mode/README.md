@@ -26,6 +26,28 @@ flowchart LR
     B -->|Render| A
 ```
 
+## About the audio in these demos
+
+Every client here ships a handful of `.pcm` files and sends them when you tap a
+clip. **That is a convenience, not the shape of the API.** `send()` accepts any
+PCM16 audio at the configured sample rate, so the exact same call works for:
+
+- live microphone capture, chunked as it arrives
+- a TTS service streaming audio back to you
+- audio from your own pipeline, wherever it runs
+
+The demos bundle files so they run with nothing but an App ID and a Session
+Token — no ASR/LLM/TTS keys, no backend. Swap the byte source and the rest of
+the integration is unchanged.
+
+```
+any PCM16 source  ─┐
+  microphone       │
+  TTS stream       ├─►  controller.send(chunk, end)  ─►  Motion Server  ─►  avatar
+  bundled file     │
+  your pipeline   ─┘
+```
+
 ## Prerequisites
 
 - [Spatius credentials](https://app.spatius.ai/apps) (App ID + Session Token)
