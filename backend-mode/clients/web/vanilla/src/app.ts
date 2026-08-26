@@ -1,77 +1,40 @@
-import {
-  AvatarSDK,
-  DrivingServiceMode,
-  LogLevel,
-} from '@spatius/avatarkit'
+import { DrivingServiceMode } from '@spatius/avatarkit'
+import { createConfiguration, type AppConfig } from './views/configuration'
 import { createPlayground } from './views/playground'
 
-function deriveHttpBase(wsUrl: string): string {
-  const httpUrl = wsUrl.replace(/^ws(s?):\/\//, 'http$1://')
-  return httpUrl.replace(/\/ws\/agent$/, '')
-}
+const MODE = DrivingServiceMode.backend
 
 export function createApp(root: HTMLElement) {
+  let step: 1 | 2 = 1
+  let config: AppConfig | null = null
+
   const app = document.createElement('div')
   app.className = 'app'
   root.appendChild(app)
 
-  async function init() {
-    app.innerHTML = '<div class="view active"><p style="text-align:center;padding:2rem;">Fetching server config...</p></div>'
+  function render() {
+    app.innerHTML = ''
 
-    const wsUrl = import.meta.env.VITE_BACKEND_MODE_WS_URL || 'ws://localhost:8765/ws/agent'
-    const httpBase = deriveHttpBase(wsUrl)
+    // View 1: Configuration
+    const v1Wrap = document.createElement('div')
+    v1Wrap.className = `view ${step === 1 ? 'active' : ''}`
+    v1Wrap.appendChild(
+      createConfiguration(MODE, (c) => {
+        config = c
+        step = 2
+        render()
+      }),
+    )
+    app.appendChild(v1Wrap)
 
-    let appId: string
-    let region: string
-
-    try {
-      const res = await fetch(`${httpBase}/api/config`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const config = await res.json()
-      appId = config.appId
-      region = config.region || 'us-west'
-
-      if (!appId) {
-        throw new Error('Server returned empty appId')
-      }
-    } catch (e: any) {
-      // Try /healthz to show which env vars are missing on the server
-      let detail = e.message || 'Unknown error'
-      try {
-        const hz = await fetch(`${httpBase}/healthz`)
-        const health = await hz.json()
-        if (!health.ok && health.missing?.length) {
-          detail += `. Server is missing env vars: ${health.missing.join(', ')}`
-        }
-      } catch { /* healthz also unreachable */ }
-
-      app.innerHTML = `<div class="config-error"><a href="https://app.spatius.ai" target="_blank" rel="noreferrer"><img src="/api-key-guide.png" alt="API Key Guide" style="max-width:100%;border-radius:10px;margin-bottom:16px" /></a><p>Failed to fetch config from <code>${httpBase}/api/config</code>: ${detail}</p></div>`
-      return
+    // View 2: Playground
+    const v2Wrap = document.createElement('div')
+    v2Wrap.className = `view ${step === 2 ? 'active' : ''}`
+    if (config && step === 2) {
+      v2Wrap.appendChild(createPlayground(config))
     }
-
-    app.innerHTML = '<div class="view active"><p style="text-align:center;padding:2rem;">Initializing SDK...</p></div>'
-
-    const envMap: Record<string, string> = {
-      'us-west': 'us-west',
-    }
-
-    try {
-      await AvatarSDK.initialize(appId, {
-        region: envMap[region] ?? 'us-west',
-        drivingServiceMode: DrivingServiceMode.backend,
-        audioFormat: { channelCount: 1, sampleRate: 16000 },
-        logLevel: LogLevel.all,
-      })
-
-      app.innerHTML = ''
-      const wrap = document.createElement('div')
-      wrap.className = 'view active'
-      wrap.appendChild(createPlayground())
-      app.appendChild(wrap)
-    } catch (e: any) {
-      app.innerHTML = `<div class="config-error">SDK initialization failed: ${e.message || 'Unknown error'}</div>`
-    }
+    app.appendChild(v2Wrap)
   }
 
-  init()
+  render()
 }

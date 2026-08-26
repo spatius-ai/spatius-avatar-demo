@@ -36,6 +36,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Signed with the debug key so `assembleRelease` produces something that
+            // installs. Rendering an avatar is the whole point of this demo and a debug
+            // build drops the frame rate far enough that the SDK looks slow, so release
+            // is what should be run — and an unsigned APK cannot be. Replace this with
+            // your own key before shipping anything.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -58,6 +64,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // Stop / Pause / PlayArrow for the controls over the avatar.
+    implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.androidx.navigation.compose)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation(libs.junit)

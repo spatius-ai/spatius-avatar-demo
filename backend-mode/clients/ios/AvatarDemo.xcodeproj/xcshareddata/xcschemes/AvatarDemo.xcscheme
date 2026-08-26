@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2610"
+   LastUpgradeVersion = "1600"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
-      buildArchitectures = "Automatic">
+      runPostActionsOnFailure = "NO">
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -15,7 +15,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "81D7B2FE2EEE953E0071D83D"
+               BlueprintIdentifier = "926DC502EA8996B807D26826"
                BuildableName = "AvatarDemo.app"
                BlueprintName = "AvatarDemo"
                ReferencedContainer = "container:AvatarDemo.xcodeproj">
@@ -28,7 +28,20 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "926DC502EA8996B807D26826"
+            BuildableName = "AvatarDemo.app"
+            BlueprintName = "AvatarDemo"
+            ReferencedContainer = "container:AvatarDemo.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
+      <Testables>
+      </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -44,12 +57,14 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "81D7B2FE2EEE953E0071D83D"
+            BlueprintIdentifier = "926DC502EA8996B807D26826"
             BuildableName = "AvatarDemo.app"
             BlueprintName = "AvatarDemo"
             ReferencedContainer = "container:AvatarDemo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -61,12 +76,14 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "81D7B2FE2EEE953E0071D83D"
+            BlueprintIdentifier = "926DC502EA8996B807D26826"
             BuildableName = "AvatarDemo.app"
             BlueprintName = "AvatarDemo"
             ReferencedContainer = "container:AvatarDemo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

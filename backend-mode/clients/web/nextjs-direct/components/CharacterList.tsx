@@ -14,9 +14,11 @@ interface Props {
   loadingId: string | null
   loadProgress: number
   onSelect: (id: string, name: string) => void
+  /** Nothing on the canvas yet, so this list is the only thing worth clicking. */
+  empty?: boolean
 }
 
-export default function CharacterList({ loadingId, loadProgress, onSelect }: Props) {
+export default function CharacterList({ loadingId, loadProgress, onSelect, empty }: Props) {
   const [adding, setAdding] = useState(false)
   const [customId, setCustomId] = useState('')
   const [customChars, setCustomChars] = useState<Character[]>([])
@@ -36,7 +38,13 @@ export default function CharacterList({ loadingId, loadProgress, onSelect }: Pro
   return (
     <div className="character-list">
       <h3>Characters</h3>
-      <div className="character-items">
+      {/*
+        Until a character is picked there is nothing to render and every other
+        control is inert, which reads as a broken page rather than a first step.
+        The pulse stops the moment one is chosen — it points at what to do next,
+        so it has no reason to keep running afterwards.
+      */}
+      <div className={`character-items ${empty ? 'needs-pick' : ''}`}>
         {allChars.map(c => (
           <button
             key={c.id}
@@ -48,7 +56,7 @@ export default function CharacterList({ loadingId, loadProgress, onSelect }: Pro
               {c.name.charAt(0)}
             </span>
             <span className="character-name">{c.name}</span>
-            {loadingId === c.id && <span className="character-progress">{Math.round(loadProgress)}%</span>}
+            {loadingId === c.id && <span className="character-progress">{Math.round(loadProgress * 100)}%</span>}
           </button>
         ))}
 

@@ -3,10 +3,24 @@ import 'package:spatius_avatarkit/spatius_avatarkit.dart' hide ConnectionState, 
 
 import 'avatar_view_model.dart';
 import 'characters.dart';
-import 'config.dart';
+import 'config_check_page.dart';
 
 class PlaygroundPage extends StatefulWidget {
-  const PlaygroundPage({super.key});
+  const PlaygroundPage({
+    super.key,
+    required this.baseUrl,
+    required this.scene,
+    required this.language,
+    required this.configuredAvatarId,
+    required this.clips,
+  });
+
+  final String baseUrl;
+  final Scene scene;
+  final Lang language;
+  /// Whatever the server nominates, so the playground is never empty on arrival.
+  final String configuredAvatarId;
+  final List<ServerClip> clips;
 
   @override
   State<PlaygroundPage> createState() => _PlaygroundPageState();
@@ -18,7 +32,6 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   final TextEditingController _customIdController = TextEditingController();
 
   String? _selectedCharacterId;
-  bool _isPaused = false;
   bool _isLoadingAvatar = false;
   double _loadProgress = 0;
   String? _loadError;
@@ -29,6 +42,12 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   void initState() {
     super.initState();
     _vm.addListener(_onVmChanged);
+    _vm.baseUrl = widget.baseUrl;
+    _vm.language = widget.language == Lang.zh ? 'zh' : 'en';
+    _vm.clips = widget.clips;
+    if (widget.configuredAvatarId.isNotEmpty) {
+      _loadCharacter(widget.configuredAvatarId);
+    }
   }
 
   void _onVmChanged() {
@@ -49,8 +68,16 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Playground'),
+        title: const Text('Backend Mode'),
         centerTitle: true,
+        actions: [
+          // A dialog rather than a list beside the avatar: a phone has no room for
+          // both, and the avatar is what the screen is for.
+          TextButton(
+            onPressed: _showCharacters,
+            child: const Text('Avatar'),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -58,18 +85,13 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
           _buildAvatarSection(),
           // 2. Status bar
           _buildStatusBar(),
-          // 3. Control buttons
-          _buildControlButtons(),
           const Divider(height: 1),
-          // 4. Two-column: Characters | Host controls
+          // The two scenes differ only in where the audio comes from: a clip the
+          // server already has, or this device's microphone. Both arrive back as the
+          // same audio-plus-motion pair, so everything below the split is shared.
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: SingleChildScrollView(child: _buildCharacterSection())),
-                const VerticalDivider(width: 1),
-                Expanded(child: SingleChildScrollView(child: _buildHostPanel())),
-              ],
+            child: SingleChildScrollView(
+              child: widget.scene == Scene.sample ? _buildClipList() : _buildHostPanel(),
             ),
           ),
         ],
@@ -81,17 +103,51 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
 
   Widget _buildAvatarSection() {
     if (_vm.avatar != null) {
-      return Container(
+      final idle = _vm.conversationState == 'idle';
+      // Read from the SDK rather than a local flag: playback ending on its own would
+      // leave a toggle saying "Resume" with nothing paused.
+      final paused = _vm.conversationState == 'paused';
+      return SizedBox(
         height: 280,
         width: double.infinity,
-        color: Colors.black,
-        child: AvatarWidget(
-          key: ValueKey(_avatarViewKey),
-          avatar: _vm.avatar!,
-          onPlatformViewCreated: (controller) {
-            _vm.setAvatarController(controller);
-          },
-        ),
+        child: Stack(children: [
+          Container(
+            color: Colors.black,
+            child: AvatarWidget(
+              key: ValueKey(_avatarViewKey),
+              avatar: _vm.avatar!,
+              onPlatformViewCreated: (controller) {
+                _vm.setAvatarController(controller);
+            // Nothing to ask the user here: this is a WebSocket to the demo's own
+            // server, not a session that costs anything. The iOS and Android clients
+            // connect at the same point, and none of the three has a Start button —
+            // the server owns the Motion Server connection, so there is nothing for
+            // one to start.
+                _vm.backendConnect();
+              },
+            ),
+          ),
+          // Over the avatar, since that is what they act on, and pinned to the two
+          // bottom corners rather than centred as a pair: the avatar's face is in the
+          // middle, and a row of buttons across it is the one place they cannot go.
+          if (!idle)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 16,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _stageButton(Icons.stop, const Color(0xFFEF4444), _vm.interrupt),
+                  _stageButton(
+                    paused ? Icons.play_arrow : Icons.pause,
+                    Theme.of(context).colorScheme.primary,
+                    paused ? _vm.resume : _vm.pause,
+                  ),
+                ],
+              ),
+            ),
+        ]),
       );
     }
 
@@ -126,78 +182,90 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
 
   // --- Status bar ---
 
+  /// The SDK callbacks worth watching, in the order they first fire.
+  ///
+  /// There is no Motion Server connection row: in Backend Mode the server holds that
+  /// one, so `onConnectionState` never fires here — what this reports instead is the
+  /// WebSocket this app renders from.
   Widget _buildStatusBar() {
+    final theme = Theme.of(context);
+    final rows = <(String, String?)>[
+      ('Download', _isLoadingAvatar ? '${(_loadProgress * 100).toInt()}%' : 'complete'),
+      ('First frame', _vm.avatar != null ? 'rendered' : 'waiting'),
+      (
+        'Server',
+        _vm.backendConnected
+            ? 'connected'
+            : _vm.backendConnecting
+                ? 'connecting'
+                : 'disconnected',
+      ),
+      ('Conversation', _vm.conversationState),
+      ('Error', _vm.errorMessage ?? 'none'),
+    ];
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.dns, size: 14, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(
-                _vm.backendConnected
-                    ? 'connected'
-                    : _vm.backendConnecting
-                        ? 'connecting...'
-                        : 'disconnected',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+          for (final (label, value) in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      value ?? '\u2014',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: label == 'Error' && value != 'none'
+                            ? theme.colorScheme.error
+                            : null,
+                      ),
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 16),
-              const Icon(Icons.chat_bubble_outline, size: 14, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(
-                _vm.conversationState,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-          if (_vm.errorMessage != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              _vm.errorMessage!,
-              style: const TextStyle(fontSize: 12, color: Colors.red),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// One of the two controls over the avatar.
+  ///
+  /// An icon rather than a word: these sit on top of the render, where a label wide
+  /// enough to read is a label wide enough to cover the picture.
+  Widget _stageButton(IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.85), width: 3),
+          boxShadow: const [
+            BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 4)),
           ],
-        ],
+        ),
+        child: Icon(icon, color: Colors.white, size: 24),
       ),
     );
   }
-
-  // --- Control buttons ---
-
-  Widget _buildControlButtons() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          OutlinedButton(
-            onPressed: () {
-              if (_isPaused) {
-                _vm.resume();
-              } else {
-                _vm.pause();
-              }
-              setState(() => _isPaused = !_isPaused);
-            },
-            child: Text(
-              _isPaused ? 'Resume' : 'Pause',
-              style: const TextStyle(fontSize: 12),
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: _vm.interrupt,
-            child: const Text('Interrupt', style: TextStyle(fontSize: 12)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- Character section ---
 
   Widget _buildCharacterSection() {
     return Padding(
@@ -347,121 +415,167 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
 
   // --- Host panel ---
 
-  Widget _buildHostPanel() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              'Backend controls',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Connect / Disconnect
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: _vm.backendConnected
-                  ? OutlinedButton.icon(
-                      onPressed: _vm.backendDisconnect,
-                      icon: const Icon(Icons.power_off, size: 14),
-                      label: const Text('Disconnect', style: TextStyle(fontSize: 12)),
-                      style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                    )
-                  : OutlinedButton.icon(
-                      onPressed: _vm.backendConnecting ? null : _vm.backendConnect,
-                      icon: const Icon(Icons.bolt, size: 14),
-                      label: Text(
-                        _vm.backendConnecting ? 'Connecting...' : 'Connect',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Mic toggle
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _vm.backendConnected
-                    ? () {
-                        if (_vm.backendMicActive) {
-                          _vm.backendStopMic();
-                        } else {
-                          _vm.backendStartMic();
-                        }
-                      }
-                    : null,
-                icon: Icon(
-                  _vm.backendMicActive ? Icons.mic_off : Icons.mic,
-                  size: 14,
-                ),
-                label: Text(
-                  _vm.backendMicActive ? 'Stop Mic' : 'Start Mic',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _vm.backendMicActive ? Colors.red : Colors.blue,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Text input
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    style: const TextStyle(fontSize: 12),
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _sendHostText(),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  onPressed: _vm.backendConnected && _textController.text.trim().isNotEmpty
-                      ? _sendHostText
-                      : null,
-                  icon: const Icon(Icons.send, size: 16),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              'Connects to ${Config.backendModeURL}/ws/agent\nUsing Backend Mode server.',
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
-            ),
+  void _showCharacters() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Avatar'),
+        content: SingleChildScrollView(child: _buildCharacterSection()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
   }
 
-  // --- Actions ---
+  Widget _buildClipList() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Pre-recorded audio',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          for (final entry in _vm.clips)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: InkWell(
+                // Disabled until the socket is up as well as while one is in flight:
+                // a tap before then is sent to nobody, and the row just goes quiet.
+                onTap: _vm.backendConnected && _vm.playingClip == null
+                    ? () => _vm.playSample(entry.clip)
+                    : null,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.graphic_eq, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _vm.playingClip == entry.clip ? '...' : entry.name,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'The clips live on the server and never pass through this app: one is '
+            'streamed straight into the avatar, and what arrives here is the encoded '
+            'audio and motion to render.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The realtime scene: the microphone, and a way to type instead.
+  ///
+  /// No Connect button — the socket opens with the avatar. The same shape as the iOS
+  /// client: one large microphone, the line of text under it that says what it is
+  /// doing, and a field for trying the scene without speaking.
+  Widget _buildHostPanel() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Microphone',
+            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: InkWell(
+              onTap: _vm.backendConnected
+                  ? () => _vm.backendMicActive
+                      ? _vm.backendStopMic()
+                      : _vm.backendStartMic()
+                  : null,
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: !_vm.backendConnected
+                      ? theme.colorScheme.outlineVariant
+                      : _vm.backendMicActive
+                          ? const Color(0xFFEF4444)
+                          : theme.colorScheme.primary,
+                ),
+                child: Icon(
+                  _vm.backendMicActive ? Icons.stop : Icons.mic,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: Text(
+              !_vm.backendConnected
+                  ? 'Connecting to the server…'
+                  : _vm.backendMicActive
+                      ? 'Listening — just talk, the agent decides when your turn ends.'
+                      : 'Tap to start talking.',
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // A way to try the scene without a microphone — a device with no input, or
+          // a quick check that the agent replies.
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _textController,
+                enabled: _vm.backendConnected,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '…or type a line to speak',
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _sendHostText(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: _vm.backendConnected ? _sendHostText : null,
+              child: const Text('Say'),
+            ),
+          ]),
+
+          const SizedBox(height: 16),
+          Text(
+            'The conversation runs on the server — ASR, LLM and TTS — and the reply is '
+            'driven into the avatar there. This app only renders the audio and motion '
+            'that come back.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
 
   void _sendHostText() {
     final text = _textController.text.trim();
