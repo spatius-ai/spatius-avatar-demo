@@ -14,8 +14,9 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@direct-core": ["../../shared/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../../shared/src"]
 }

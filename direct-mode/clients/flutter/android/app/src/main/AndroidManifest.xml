@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Declared here rather than left to the record plugin's own manifest merge:
+         the realtime scene is what needs it, and an implicit dependency is one
+         upgrade away from disappearing. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="avatar_sdk_demo"
         android:name="${applicationName}"

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import { DrivingServiceMode } from '@spatius/avatarkit'
 import type { AppConfig } from '../App.vue'
 import { useAvatarManager } from '../composables/useAvatarSDK'
+import { useToast } from '../composables/useToast'
 import CharacterList from '../components/CharacterList.vue'
 import ControlPanel from '../components/ControlPanel.vue'
+import StageControls from '../components/StageControls.vue'
+import Toast from '../components/Toast.vue'
 
-const props = defineProps<{
-  config: AppConfig
-}>()
+defineProps<{ mode: DrivingServiceMode; config: AppConfig }>()
 
 const MAX_AVATARS = 4
 
@@ -15,6 +17,8 @@ const multiMode = ref(false)
 const loadingCharId = ref<string | null>(null)
 const canvasRef = ref<HTMLDivElement | null>(null)
 const containerRefs = new Map<string, HTMLDivElement>()
+
+const { messages, push: notify, dismiss } = useToast()
 
 const {
   avatars,
@@ -25,7 +29,31 @@ const {
   loadAvatar,
   removeAvatar,
   removeAll,
-} = useAvatarManager()
+} = useAvatarManager(notify)
+
+/**
+ * Stops the clip currently being streamed, set by whichever panel started it.
+ *
+ * Held here rather than in ControlPanel because interrupting is now reachable
+ * from two places, and `controller.interrupt()` alone is not enough: it drops
+ * what is buffered, but the sender keeps feeding chunks in and playback picks
+ * straight back up.
+ */
+let cancelSend: (() => void) | null = null
+
+function registerCancel(cancel: (() => void) | null) {
+  // Clearing means "stop what is running", not just "forget it": the chunk loop
+  // is a chain of timeouts that keeps calling send() on its own, so dropping the
+  // reference alone would leave it feeding a controller that has disconnected.
+  if (cancel === null) cancelSend?.()
+  cancelSend = cancel
+}
+
+function handleInterrupt() {
+  activeController.value?.interrupt()
+  cancelSend?.()
+  cancelSend = null
+}
 
 // Update active-cell highlight when activeUid changes
 watch(activeUid, (uid) => {
@@ -68,13 +96,16 @@ async function handleCharacterSelect(charId: string, charName: string) {
   overlay.innerHTML = '<div class="cell-spinner"></div><div class="cell-progress-text">0%</div>'
   cell.appendChild(overlay)
 
+  // Slot index for this avatar
   const slotIndex = multiMode.value ? avatars.value.length + 1 : 1
 
+  // Index badge (top-left)
   const badge = document.createElement('div')
   badge.className = 'cell-badge'
   badge.textContent = String(slotIndex)
   cell.appendChild(badge)
 
+  // Close button (top-right), only in multi mode
   if (multiMode.value) {
     const closeBtn = document.createElement('button')
     closeBtn.className = 'cell-close'
@@ -82,15 +113,22 @@ async function handleCharacterSelect(charId: string, charName: string) {
     closeBtn.onclick = (e) => {
       e.stopPropagation()
       for (const [uid, c] of containerRefs) {
-        if (c === cell) { handleRemoveAvatar(uid); break }
+        if (c === cell) {
+          handleRemoveAvatar(uid)
+          break
+        }
       }
     }
     cell.appendChild(closeBtn)
   }
 
+  // Click cell to select
   cell.onclick = () => {
     for (const [uid, c] of containerRefs) {
-      if (c === cell) { setActiveUid(uid); break }
+      if (c === cell) {
+        setActiveUid(uid)
+        break
+      }
     }
   }
 
@@ -100,6 +138,7 @@ async function handleCharacterSelect(charId: string, charName: string) {
   cell.appendChild(container)
 
   canvasRef.value?.appendChild(cell)
+  await nextTick()
   await new Promise(r => requestAnimationFrame(r))
 
   try {
@@ -112,6 +151,7 @@ async function handleCharacterSelect(charId: string, charName: string) {
     overlay.remove()
   } catch (e: any) {
     console.error('Load failed:', e)
+    notify(`Failed to load avatar: ${e?.message ?? e}`)
     cell.remove()
   } finally {
     loadingCharId.value = null
@@ -120,7 +160,7 @@ async function handleCharacterSelect(charId: string, charName: string) {
 
 function handleMultiToggle() {
   if (multiMode.value && avatars.value.length > 1) {
-    avatars.value.forEach(a => {
+    avatars.value.forEach((a) => {
       if (a.uid !== activeUid.value) {
         const cell = containerRefs.get(a.uid)
         if (cell) cell.remove()
@@ -132,29 +172,26 @@ function handleMultiToggle() {
   multiMode.value = !multiMode.value
 }
 
-const gridClass = computed(() => multiMode.value ? 'grid-4' : 'grid-1')
+const gridClass = computed(() => (multiMode.value ? 'grid-4' : 'grid-1'))
 
+// Build slot selector for control panel in multi mode
 const avatarSlots = computed(() =>
-  avatars.value.map((a, i) => ({
-    uid: a.uid,
-    index: i + 1,
-    name: a.characterName,
-  }))
+  avatars.value.map((a, i) => ({ uid: a.uid, index: i + 1, name: a.characterName })),
 )
 
 // Find loading avatar's progress
-const loadProgress = computed(() => {
-  const loadingAvatar = avatars.value.find(a => a.loading)
-  return loadingAvatar?.loadProgress ?? 0
-})
+const loadProgress = computed(() => avatars.value.find(a => a.loading)?.loadProgress ?? 0)
+
+const isEmpty = computed(() => avatars.value.length === 0 && !loadingCharId.value)
 </script>
 
 <template>
   <div class="playground">
     <div class="playground-left">
       <CharacterList
-        :loading-id="loadingCharId"
-        :load-progress="loadProgress"
+        :loadingId="loadingCharId"
+        :loadProgress="loadProgress"
+        :empty="isEmpty"
         @select="handleCharacterSelect"
       />
     </div>
@@ -162,34 +199,44 @@ const loadProgress = computed(() => {
     <div class="playground-center">
       <div class="center-header">
         <label class="multi-toggle">
-          <input
-            type="checkbox"
-            :checked="multiMode"
-            @change="handleMultiToggle"
-          />
+          <input type="checkbox" :checked="multiMode" @change="handleMultiToggle" />
           <span>Multi-avatar mode</span>
         </label>
-        <span v-if="multiMode" class="avatar-count">
-          {{ avatars.length }}/{{ MAX_AVATARS }}
-        </span>
+        <span class="avatar-count" v-if="multiMode">{{ avatars.length }}/{{ MAX_AVATARS }}</span>
       </div>
 
-      <div ref="canvasRef" :class="['avatar-canvas', gridClass]">
-        <div v-if="avatars.length === 0 && !loadingCharId" class="canvas-empty">
-          Select a character to get started
+      <div class="canvas-stage">
+        <div ref="canvasRef" :class="['avatar-canvas', gridClass]">
+          <div class="canvas-empty" v-if="isEmpty">Select a character to get started</div>
         </div>
+
+        <!-- Over the avatar, since that is what they act on. Which pair shows
+             follows the conversation state; in idle neither does. -->
+        <StageControls
+          v-if="activeAvatar && activeController"
+          :state="activeAvatar.conversationState"
+          @interrupt="handleInterrupt"
+          @pause="activeController.pause()"
+          @resume="activeController.resume()"
+        />
       </div>
     </div>
 
     <div class="playground-right">
       <ControlPanel
-        :active-avatar="activeAvatar"
-        :active-controller="activeController"
-        :multi-mode="multiMode"
-        :avatar-slots="avatarSlots"
-        :active-uid="activeUid"
-        @slot-select="setActiveUid"
+        :activeAvatar="activeAvatar"
+        :activeController="activeController"
+        :multiMode="multiMode"
+        :avatarSlots="avatarSlots"
+        :activeUid="activeUid"
+        :scene="config.scene"
+        :language="config.language"
+        @slotSelect="setActiveUid"
+        @notify="notify"
+        @registerCancel="registerCancel"
       />
     </div>
+
+    <Toast :messages="messages" @dismiss="dismiss" />
   </div>
 </template>

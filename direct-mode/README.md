@@ -60,21 +60,36 @@ The examples in `servers/python`, `servers/nodejs`, and `servers/go` are token s
 
 ## Quick Start
 
-### Web quickstart
+### Web
+
+The server holds the API Key and mints Session Tokens, so it starts first:
 
 ```bash
-cd clients/web/quickstart
+cd servers/python
+cp .env.example .env    # fill SPATIUS_API_KEY and SPATIUS_APP_ID
+uv run app.py
+```
+
+Then the client, in a second terminal:
+
+```bash
+cd clients/web/reference/react
 pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`, fill `.env` with App ID, Avatar ID, and Session Token, then use **Sample audio** to stream the bundled PCM file and see the avatar speak.
+Open `http://localhost:5173` and pick a scene on the configuration page.
 
-The same quickstart also includes an optional **Realtime conversation** mode. Fill one provider section in `.env`, restart the dev server, select **Realtime conversation**, and the demo captures microphone audio, sends it to the selected realtime provider, and streams the assistant PCM output into AvatarKit.
+**Sample audio** streams a bundled PCM clip and needs nothing beyond the two Spatius
+values. **Realtime conversation** captures the microphone and runs a voice agent on the
+server, so it also needs the LiveKit section of `.env` — LiveKit is used for Inference
+only, not for a room, so no OpenAI or Deepgram account of your own is required.
 
-This quickstart includes OpenAI Realtime and Gemini Live WebSocket adapters. Other realtime providers, such as Azure OpenAI Realtime, can be used by adapting their live audio output into PCM16 chunks.
+Anything left blank in `.env` can be filled in on the configuration page instead, which
+is what makes the demo usable from a phone on the same network.
 
-Multi-framework Web reference clients live under `clients/web/reference/`: `react/`, `vue/`, `vanilla/`, `nextjs-direct/`, and `nextjs-iframe/`.
+The same client is provided for other frameworks under `clients/web/reference/`:
+`vue/`, `vanilla/`, `nextjs-direct/`, and `nextjs-iframe/`.
 
 ### Android
 
@@ -95,7 +110,7 @@ Open `AvatarDemo.xcodeproj` in Xcode. Enter App ID and Session Token, select a c
 direct-mode/
 ├── clients/
 │   ├── web/
-│   │   ├── quickstart/
+│   │   ├── shared/       # backend calls + SDK lifecycle the clients share
 │   │   └── reference/
 │   │       ├── react/
 │   │       ├── vue/
@@ -114,9 +129,14 @@ direct-mode/
 
 ## Extending with Real-Time Conversation
 
-The [`clients/web/quickstart`](./clients/web/quickstart) demo shows the smallest browser-only version: microphone PCM goes to a realtime model, assistant PCM comes back, and AvatarKit sends that audio to Motion Server for lip sync.
+The **Realtime conversation** scene shows the shape of it: the browser captures
+microphone PCM, [`servers/python/realtime.py`](./servers/python/realtime.py) runs ASR,
+LLM and TTS, and the assistant PCM comes back over the same WebSocket. There is no
+LiveKit room in that path — the browser hands the reply to `controller.send()` and
+keeps the Motion Server connection itself, which is what makes it Direct Mode.
 
-For production, keep long-lived realtime provider keys on your backend and mint short-lived browser tokens.
+For production, keep long-lived provider keys on your backend and mint short-lived
+browser tokens, as the server here does for the Session Token.
 
 ## References
 

@@ -3,9 +3,25 @@ import 'package:spatius_avatarkit/spatius_avatarkit.dart' hide ConnectionState, 
 
 import 'avatar_view_model.dart';
 import 'characters.dart';
+import 'configuration_page.dart';
 
 class PlaygroundPage extends StatefulWidget {
-  const PlaygroundPage({super.key});
+  const PlaygroundPage({
+    super.key,
+    required this.scene,
+    required this.language,
+    required this.realtimeUrl,
+    required this.configuredAvatarId,
+  });
+
+  final Scene scene;
+  final Lang language;
+
+  /// Where the realtime scene's agent socket lives, as the server reported it.
+  final String realtimeUrl;
+
+  /// Whatever the server nominates, so the playground is never empty on arrival.
+  final String configuredAvatarId;
 
   @override
   State<PlaygroundPage> createState() => _PlaygroundPageState();
@@ -20,11 +36,21 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   String? _loadError;
   bool _showCustomInput = false;
   final TextEditingController _customIdController = TextEditingController();
+  final TextEditingController _textController = TextEditingController();
   int _avatarViewKey = 0;
 
   @override
   void initState() {
     super.initState();
+    _vm.realtimeUrl = widget.realtimeUrl;
+    _vm.language = widget.language == Lang.zh ? 'zh' : 'en';
+    // Whatever the server nominates, loaded on arrival — the same as the iOS and
+    // Android clients, so the playground is never empty to begin with.
+    if (widget.configuredAvatarId.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadCharacter(widget.configuredAvatarId);
+      });
+    }
     _vm.addListener(_onVmChanged);
     _vm.onToast = _showToast;
   }
@@ -74,6 +100,8 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
     _vm.close();
     _vm.dispose();
     _customIdController.dispose();
+    _textController.dispose();
+    _vm.closeRealtime();
     super.dispose();
   }
 
@@ -81,28 +109,48 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Playground'),
+        title: const Text('Direct Mode'),
         centerTitle: true,
+        actions: [
+          // A dialog rather than a list beside the avatar: a phone has no room for
+          // both, and the avatar is what the screen is for.
+          TextButton(onPressed: _showCharacters, child: const Text('Characters')),
+        ],
       ),
       body: Column(
         children: [
           _buildAvatarSection(),
-          _buildStatusBar(),
-          _buildControlButtons(),
+          // Above the status bar: connecting is the first thing to do once a
+          // character is loaded, and the status below reports whether it worked.
+          if (_vm.avatar != null) _buildStartButton(),
           const Divider(height: 1),
+          // The two scenes differ only in where the audio comes from: a bundled clip,
+          // or this device's microphone with an agent answering. Both end at
+          // controller.yieldAudioData().
+          // What drives the avatar, and the only thing that differs between the two
+          // scenes. The realtime panel is one control and a transcript that grows, so
+          // it scrolls with the status bar above it; the clips are what gets tapped
+          // and the status is what gets read while the avatar answers, so those two
+          // sit side by side and neither may push the other off screen.
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                    child: SingleChildScrollView(
-                        child: _buildCharacterSection())),
-                const VerticalDivider(width: 1),
-                Expanded(
-                    child: SingleChildScrollView(
-                        child: _buildAudioFileSection())),
-              ],
-            ),
+            child: widget.scene == Scene.realtime
+                ? SingleChildScrollView(
+                    child: Column(children: [
+                      _buildStatusBar(),
+                      _buildRealtimePanel(),
+                    ]),
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(child: _buildStatusBar()),
+                      ),
+                      Expanded(
+                        child: SingleChildScrollView(child: _buildAudioFileSection()),
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
@@ -113,17 +161,45 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
 
   Widget _buildAvatarSection() {
     if (_vm.avatar != null) {
-      return Container(
+      final idle = _vm.conversationState == 'idle';
+      final paused = _vm.conversationState == 'paused';
+      return SizedBox(
         height: 280,
         width: double.infinity,
-        color: Colors.black,
-        child: AvatarWidget(
-          key: ValueKey(_avatarViewKey),
-          avatar: _vm.avatar!,
-          onPlatformViewCreated: (controller) {
-            _vm.setAvatarController(controller);
-          },
-        ),
+        child: Stack(children: [
+          Container(
+            color: Colors.black,
+            child: AvatarWidget(
+              key: ValueKey(_avatarViewKey),
+              avatar: _vm.avatar!,
+              onPlatformViewCreated: (controller) {
+                _vm.setAvatarController(controller);
+              },
+            ),
+          ),
+          // Over the avatar, since that is what they act on, and pinned to the two
+          // bottom corners rather than centred as a pair: the avatar's face is in the
+          // middle, and a row of buttons across it is the one place they cannot go.
+          // Interrupt keeps the left corner in both states — it does the same thing
+          // either way, and moving it would make the two swap places on every pause.
+          if (!idle)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 16,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _stageButton(Icons.stop, const Color(0xFFEF4444), _vm.interrupt),
+                  _stageButton(
+                    paused ? Icons.play_arrow : Icons.pause,
+                    Theme.of(context).colorScheme.primary,
+                    paused ? _vm.resume : _vm.pause,
+                  ),
+                ],
+              ),
+            ),
+        ]),
       );
     }
 
@@ -158,71 +234,101 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
 
   // --- Status bar ---
 
+  /// The SDK callbacks worth watching, in the order they first fire.
+  ///
+  /// Listed whether or not this demo acts on the value — which hooks exist is part of
+  /// what a reference client is meant to show. A value of `—` means "registered,
+  /// nothing reported yet".
   Widget _buildStatusBar() {
+    final theme = Theme.of(context);
+    final rows = <(String, String?)>[
+      ('Download', _isLoadingAvatar ? '${(_loadProgress * 100).toInt()}%' : 'complete'),
+      ('First frame', _vm.avatar != null ? 'rendered' : 'waiting'),
+      ('Connection', _vm.connectionState),
+      ('Conversation', _vm.conversationState),
+      ('Frame rate', _vm.fps == null ? null : '${_vm.fps} fps'),
+      ('Error', _vm.errorMessage ?? 'none'),
+    ];
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.cell_tower, size: 14, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(
-                _vm.connectionState,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+          for (final (label, value) in rows)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      value ?? '\u2014',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: label == 'Error' && value != 'none'
+                            ? theme.colorScheme.error
+                            : value == null
+                                ? theme.colorScheme.outline
+                                : null,
+                      ),
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 16),
-              const Icon(Icons.chat_bubble_outline, size: 14, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(
-                _vm.conversationState,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-          if (_vm.errorMessage != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              _vm.errorMessage!,
-              style: const TextStyle(fontSize: 12, color: Colors.red),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// One of the two controls over the avatar.
+  ///
+  /// An icon rather than a word: these sit on top of the render, where a label wide
+  /// enough to read is a label wide enough to cover the picture. The white ring is
+  /// what keeps it readable against a light avatar and a dark background alike.
+  Widget _stageButton(IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.85), width: 3),
+          boxShadow: const [
+            BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 4)),
           ],
-        ],
+        ),
+        child: Icon(icon, color: Colors.white, size: 24),
       ),
     );
   }
 
-  // --- Control buttons ---
-
-  Widget _buildControlButtons() {
-    final isDisconnected = _vm.connectionState == 'disconnected';
-
+  Widget _buildStartButton() {
+    final connected = _vm.connectionState == 'connected';
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          OutlinedButton(
-            onPressed: isDisconnected ? _vm.start : null,
-            child: const Text('Start', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: _vm.interrupt,
-            child: const Text('Interrupt', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: !isDisconnected ? _vm.close : null,
-            child: const Text('Close', style: TextStyle(fontSize: 12)),
-          ),
-        ],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          onPressed: connected ? null : _vm.start,
+          child: Text(connected ? 'Connected' : 'Start'),
+        ),
       ),
     );
   }
-
-  // --- Audio file section ---
 
   Widget _buildAudioFileSection() {
     return Padding(
@@ -284,6 +390,107 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   }
 
   // --- Character section ---
+
+  void _showCharacters() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Characters'),
+        content: SingleChildScrollView(child: _buildCharacterSection()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The realtime scene: one microphone, a way to type instead, and what was said.
+  Widget _buildRealtimePanel() {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          InkWell(
+            onTap: _vm.agentConnecting
+                ? null
+                : () => _vm.micActive ? _vm.stopMic() : _vm.startMic(),
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _vm.micActive ? const Color(0xFFEF4444) : theme.colorScheme.primary,
+              ),
+              child: Icon(
+                _vm.micActive ? Icons.stop : Icons.mic,
+                color: Colors.white,
+                size: 30,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            switch (true) {
+              _ when _vm.agentConnecting => 'Starting the agent…',
+              _ when !_vm.agentReady => 'Tap to start talking.',
+              _ when _vm.micActive =>
+                'Listening — just talk, the agent decides when your turn ends.',
+              _ => 'Tap to start talking.',
+            },
+            style: theme.textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _textController,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '…or type a line to speak',
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: () {
+                final line = _textController.text;
+                _textController.clear();
+                _vm.sendText(line);
+              },
+              child: const Text('Say'),
+            ),
+          ]),
+          if (_vm.transcript.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Transcript', style: theme.textTheme.titleSmall),
+            ),
+            const SizedBox(height: 4),
+            for (final (role, said) in _vm.transcript.take(20))
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Text(
+                    '${role == 'user' ? 'You' : 'Avatar'}: $said',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildCharacterSection() {
     return Padding(

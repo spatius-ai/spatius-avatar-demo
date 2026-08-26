@@ -35,9 +35,17 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "SPATIUS_APP_ID", "\"${localString("SPATIUS_APP_ID")}\"")
-        buildConfigField("String", "SPATIUS_AVATAR_ID", "\"${localString("SPATIUS_AVATAR_ID")}\"")
-        buildConfigField("String", "SPATIUS_REGION", "\"${localString("SPATIUS_REGION", "us-west")}\"")
+        // Where the demo's own server lives. No credentials here: they stay in that
+        // server's .env and never reach the device — see BackendClient.
+        //
+        // A phone cannot reach the dev machine's localhost, so this is the LAN address
+        // the server prints on startup. Seeded from local.properties for convenience
+        // and editable on the configuration screen.
+        buildConfigField(
+            "String",
+            "DIRECT_MODE_URL",
+            "\"${localString("DIRECT_MODE_URL", "http://10.0.2.2:8090")}\"",
+        )
     }
 
     buildTypes {
@@ -47,6 +55,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Signed with the debug key so `assembleRelease` produces something that
+            // installs. Rendering an avatar is the whole point of this demo and a debug
+            // build drops the frame rate far enough that the SDK looks slow — which is
+            // the first thing a reader would blame — so release is what should be run,
+            // and an unsigned APK cannot be. Replace this with your own key before
+            // shipping anything.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -61,6 +76,10 @@ android {
 
 dependencies {
     implementation(libs.avatarkit)
+    // The realtime scene's WebSocket to the demo's own agent. Declared directly
+    // rather than leaning on AvatarKit's transitive copy, which an SDK bump could
+    // drop without warning.
+    implementation(libs.okhttp)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -69,6 +88,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

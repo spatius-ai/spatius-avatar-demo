@@ -4,10 +4,32 @@ import Configuration from './views/Configuration'
 import Playground from './views/Playground'
 import './App.css'
 
+/**
+ * Which scene the playground opens in. Both drive the avatar through the same
+ * `controller.send()` — they differ only in where the audio comes from.
+ */
+export type Scene = 'sample' | 'realtime'
+
+/** Which language the realtime conversation runs in. */
+export type Lang = 'en' | 'zh'
+
 export interface AppConfig {
   appId: string
   sessionToken: string
   region: string
+  scene: Scene
+  /**
+   * Recognition, synthesis and the agent's persona all follow this, and all three
+   * are fixed when the agent session is built — which is why it is chosen here
+   * rather than switched inside the scene.
+   */
+  language: Lang
+  /** Only the realtime scene reaches an agent, so this is absent for the other. */
+  livekit?: {
+    url: string
+    apiKey: string
+    apiSecret: string
+  }
 }
 
 const MODE = DrivingServiceMode.direct

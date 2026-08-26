@@ -4,6 +4,7 @@ import type { AppConfig } from '../App'
 import { useAvatarManager } from '../hooks/useAvatarSDK'
 import CharacterList from '../components/CharacterList'
 import ControlPanel from '../components/ControlPanel'
+import StageControls from '../components/StageControls'
 import Toast from '../components/Toast'
 import { useToast } from '../hooks/useToast'
 
@@ -31,6 +32,22 @@ export default function Playground({ mode, config }: Props) {
     removeAvatar,
     removeAll,
   } = useAvatarManager(notify)
+
+  /**
+   * Stops the clip currently being streamed, set by whichever panel started it.
+   *
+   * Held here rather than in ControlPanel because interrupting is now reachable
+   * from two places, and `controller.interrupt()` alone is not enough: it drops
+   * what is buffered, but the sender keeps feeding chunks in and playback picks
+   * straight back up.
+   */
+  const cancelSendRef = useRef<(() => void) | null>(null)
+
+  const handleInterrupt = useCallback(() => {
+    activeController?.interrupt()
+    cancelSendRef.current?.()
+    cancelSendRef.current = null
+  }, [activeController])
 
   // Update active-cell highlight when activeUid changes
   useEffect(() => {
@@ -171,6 +188,7 @@ export default function Playground({ mode, config }: Props) {
           loadingId={loadingCharId}
           loadProgress={loadProgress}
           onSelect={handleCharacterSelect}
+          empty={avatars.length === 0 && !loadingCharId}
         />
       </div>
 
@@ -189,11 +207,24 @@ export default function Playground({ mode, config }: Props) {
           )}
         </div>
 
-        <div ref={canvasRef} className={`avatar-canvas ${gridClass}`}>
-          {avatars.length === 0 && !loadingCharId && (
-            <div className="canvas-empty">
-              Select a character to get started
-            </div>
+        <div className="canvas-stage">
+          <div ref={canvasRef} className={`avatar-canvas ${gridClass}`}>
+            {avatars.length === 0 && !loadingCharId && (
+              <div className="canvas-empty">
+                Select a character to get started
+              </div>
+            )}
+          </div>
+
+          {/* Over the avatar, since that is what they act on. Which pair shows
+              follows the conversation state; in idle neither does. */}
+          {activeAvatar && activeController && (
+            <StageControls
+              state={activeAvatar.conversationState}
+              onInterrupt={handleInterrupt}
+              onPause={() => activeController.pause()}
+              onResume={() => void activeController.resume()}
+            />
           )}
         </div>
       </div>
@@ -207,6 +238,9 @@ export default function Playground({ mode, config }: Props) {
           activeUid={activeUid}
           onSlotSelect={setActiveUid}
           onNotify={notify}
+          cancelSendRef={cancelSendRef}
+          scene={config.scene}
+          language={config.language}
         />
       </div>
 

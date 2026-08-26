@@ -1,5 +1,7 @@
+'use client'
+
 import { useCallback, useRef, useState } from 'react'
-import type { ToastKind, ToastMessage } from '../components/Toast'
+import type { ToastKind, ToastMessage } from '@/components/Toast'
 
 export function useToast() {
   const [messages, setMessages] = useState<ToastMessage[]>([])
