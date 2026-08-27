@@ -16,7 +16,7 @@
 ## Features
 
 - **Runnable examples** — Each demo is self-contained with clients, the required server-side piece, and `.env` config
-- **Multiple architectures** — Direct Mode, LiveKit Agents, and Backend Mode integration paths
+- **Three architectures** — Direct, Backend and RTC Mode, plus LiveKit Agents integration paths
 - **Multi-provider backends** — Swap between OpenAI, Google Gemini, Deepgram, Cartesia, Azure, AWS, and more
 - **Cross-platform** — Web (React, Vue, Vanilla JS, Next.js), iOS, Android, and Flutter
 
@@ -67,9 +67,9 @@ The three modes differ only in who holds the Motion Server connection:
 | Platform | Direct Mode | Backend Mode | RTC Mode |
 | --- | --- | --- | --- |
 | **Web** | [`direct-mode/clients/web/reference`](./direct-mode/clients/web/reference) — React, Vue, vanilla, Next.js | [`backend-mode/clients/web`](./backend-mode/clients/web) | [`rtc-mode/clients/web`](./rtc-mode/clients/web) |
-| **iOS** | [`direct-mode/clients/ios`](./direct-mode/clients/ios) | [`backend-mode/clients/ios`](./backend-mode/clients/ios) | Not provided today; the RTC Mode demo path is Web-only |
-| **Android** | [`direct-mode/clients/android`](./direct-mode/clients/android) | [`backend-mode/clients/android`](./backend-mode/clients/android) | Not provided today; the RTC Mode demo path is Web-only |
-| **Flutter** | [`direct-mode/clients/flutter`](./direct-mode/clients/flutter) | [`backend-mode/clients/flutter`](./backend-mode/clients/flutter) | Not provided today; the RTC Mode demo path is Web-only |
+| **iOS** | [`direct-mode/clients/ios`](./direct-mode/clients/ios) | [`backend-mode/clients/ios`](./backend-mode/clients/ios) | [`rtc-mode/clients/ios`](./rtc-mode/clients/ios) |
+| **Android** | [`direct-mode/clients/android`](./direct-mode/clients/android) | [`backend-mode/clients/android`](./backend-mode/clients/android) | [`rtc-mode/clients/android`](./rtc-mode/clients/android) |
+| **Flutter** | [`direct-mode/clients/flutter`](./direct-mode/clients/flutter) | [`backend-mode/clients/flutter`](./backend-mode/clients/flutter) | — |
 
 For LiveKit Agents specifically, see [`livekit-agent-quickstart`](./platform-integrations/livekit-agents-demo/livekit-agent-quickstart) and the [reference demo](./platform-integrations/livekit-agents-demo/livekit-agents-reference-demo).
 
