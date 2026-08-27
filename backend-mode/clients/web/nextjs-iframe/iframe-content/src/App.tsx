@@ -1,68 +1,60 @@
-import { useState, useEffect } from 'react'
-import {
-  AvatarSDK,
-  DrivingServiceMode,
-    LogLevel,
-} from '@spatius/avatarkit'
+import { useState, useCallback } from 'react'
+import { DrivingServiceMode } from '@spatius/avatarkit'
+import Configuration from './views/Configuration'
 import Playground from './views/Playground'
 import './App.css'
 
+/**
+ * Which scene the playground opens in. Both are driven server-side and reach this
+ * client as the same audio + motion messages — they differ only in where the audio
+ * came from.
+ */
+export type Scene = 'sample' | 'realtime'
+
+/** Which language the realtime conversation runs in. */
+export type Lang = 'en' | 'zh'
+
+export interface AppConfig {
+  appId: string
+  region: string
+  scene: Scene
+  /**
+   * Recognition, synthesis and the agent's persona all follow this, and all three
+   * are fixed when the agent session is built — which is why it is chosen here
+   * rather than switched inside the scene.
+   */
+  language: Lang
+  /** Only the realtime scene reaches an agent, so this is absent for the other. */
+  livekit?: {
+    url: string
+    apiKey: string
+    apiSecret: string
+  }
+}
+
+const MODE = DrivingServiceMode.backend
+
 export default function App() {
-  const [ready, setReady] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [step, setStep] = useState<1 | 2>(1)
+  const [config, setConfig] = useState<AppConfig | null>(null)
 
-  useEffect(() => {
-    const wsUrl = import.meta.env.VITE_BACKEND_MODE_WS_URL || 'ws://localhost:8765/ws/agent'
-    const httpBase = wsUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws\/agent$/, '')
-
-    fetch(`${httpBase}/api/config`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Config endpoint returned ${res.status}`)
-        const config = await res.json()
-        if (!config.appId) throw new Error('Server returned empty appId')
-        return config
-      })
-      .then((config) =>
-        AvatarSDK.initialize(config.appId, {
-          region: config.region === 'us-west' ? 'us-west' : 'us-west',
-          drivingServiceMode: DrivingServiceMode.backend,
-          audioFormat: { channelCount: 1, sampleRate: 16000 },
-          logLevel: LogLevel.all,
-        })
-      )
-      .then(() => setReady(true))
-      .catch(async (e: any) => {
-        // Try /healthz to show which env vars are missing on the server
-        try {
-          const health = await fetch(`${httpBase}/healthz`).then((r) => r.json())
-          if (!health.ok && health.missing?.length) {
-            setError(`Server missing config: ${health.missing.join(', ')}`)
-            return
-          }
-        } catch { /* healthz also unavailable */ }
-        setError(e.message || 'SDK initialization failed')
-      })
+  const handleInitialized = useCallback((c: AppConfig) => {
+    setConfig(c)
+    setStep(2)
   }, [])
-
-  if (error) {
-    return (
-      <div className="config-error" style={{ padding: 32, textAlign: 'center' }}>
-        <a href="https://app.spatius.ai" target="_blank" rel="noreferrer">
-          <img src="/api-key-guide.png" alt="API Key Guide" style={{ maxWidth: '100%', borderRadius: 10, marginBottom: 16 }} />
-        </a>
-        <p>{error}</p>
-      </div>
-    )
-  }
-
-  if (!ready) {
-    return <div style={{ textAlign: 'center', padding: '2rem' }}>Initializing SDK...</div>
-  }
 
   return (
     <div className="app">
-      <div className="view active">
-        <Playground />
+      <div className={`view ${step === 1 ? 'active' : ''}`}>
+        <Configuration
+          mode={MODE}
+          onInitialized={handleInitialized}
+        />
+      </div>
+      <div className={`view ${step === 2 ? 'active' : ''}`}>
+        {config && step === 2 && (
+          <Playground mode={MODE} config={config} />
+        )}
       </div>
     </div>
   )

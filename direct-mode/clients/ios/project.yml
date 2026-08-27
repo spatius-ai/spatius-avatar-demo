@@ -48,8 +48,8 @@ targets:
           FRAMEWORK_PATH="${PROJECT_DIR}/AvatarKit.xcframework"
           ZIP_PATH="${PROJECT_DIR}/AvatarKit.xcframework.zip"
           CHECKSUM_FILE="${PROJECT_DIR}/.avatarkit_checksum"
-          SPATIUS_AVATARKIT_IOS_URL="${SPATIUS_AVATARKIT_IOS_URL:-https://github.com/spatius-ai/avatarkit-ios-release/releases/download/v1.3.2/AvatarKit_202608072023.zip}"
-          SPATIUS_AVATARKIT_IOS_CHECKSUM="${SPATIUS_AVATARKIT_IOS_CHECKSUM:-cf0a2a3166f7648a038a864f08c72837f1b84d5c06bcdd7adf338d55d56b3a0e}"
+          SPATIUS_AVATARKIT_IOS_URL="${SPATIUS_AVATARKIT_IOS_URL:-https://github.com/spatius-ai/avatarkit-ios-release/releases/download/v1.3.3/AvatarKit_202608171818.zip}"
+          SPATIUS_AVATARKIT_IOS_CHECKSUM="${SPATIUS_AVATARKIT_IOS_CHECKSUM:-10fe93afb7d78d516af43d58463339e0addc7f685e8c13b45b346a67bb73bf3e}"
 
           NEED_DOWNLOAD=false
 
@@ -87,6 +87,21 @@ targets:
               echo "$SPATIUS_AVATARKIT_IOS_CHECKSUM" > "$CHECKSUM_FILE"
               echo "AvatarKit.xcframework installed."
           fi
+    # Run in Release, not Xcode's usual Debug.
+    #
+    # Rendering an avatar is the whole point of this demo, and an unoptimised build
+    # drops the frame rate far enough that the SDK looks slow — which is the first
+    # thing a reader would blame. Debug stays available from the scheme editor for
+    # anyone who wants breakpoints.
+    scheme:
+      run:
+        config: Release
+      profile:
+        config: Release
+      analyze:
+        config: Release
+      archive:
+        config: Release
     postBuildScripts:
       - name: Copy AvatarKit Resources
         script: |

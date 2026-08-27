@@ -2,20 +2,40 @@ import { pushToast } from './utils/toast'
 import {
   AvatarManager,
   AvatarView,
+  type AnimationType,
   type AvatarController,
   type ConnectionState,
   type ConversationState,
 } from '@spatius/avatarkit'
 
+/**
+ * What the SDK reports back, one field per public callback.
+ *
+ * Every one is registered whether or not this demo acts on it, and the status bar
+ * shows them all: which hooks exist is part of what a reference client is for, and
+ * a row that only appears once it has fired is a row nobody knows to expect.
+ */
 export interface AvatarInstance {
   uid: string
   characterId: string
   characterName: string
   view: AvatarView | null
+  /** onConnectionState */
   connectionState: ConnectionState
+  /** onConversationState */
   conversationState: ConversationState
+  /** onAnimationState — which clip is driving the render. */
+  animationState: AnimationType | null
+  /** onPlaybackStall — audio paused waiting on animation frames (strictSync only). */
+  stalled: boolean
+  /** onFirstRendering — the first frame has been drawn. */
+  rendered: boolean
+  /** onFrameRateInfo — rolling render rate, null until monitoring is switched on. */
+  fps: number | null
+  /** AvatarManager.load's onProgress */
   loading: boolean
-  loadProgress: number // 0-100
+  loadProgress: number // 0..1
+  /** onError */
   error: string | null
 }
 
@@ -65,6 +85,10 @@ export class AvatarManagerService {
       view: null,
       connectionState: 'disconnected' as ConnectionState,
       conversationState: 'idle' as ConversationState,
+      animationState: null,
+      stalled: false,
+      rendered: false,
+      fps: null,
       loading: true, loadProgress: 0, error: null,
     }
     this._avatars = [...this._avatars, inst]
@@ -84,6 +108,24 @@ export class AvatarManagerService {
         this.updateAvatar(uid, { error: err.message })
         pushToast(err.message)
       }
+
+      // The rest are registered even though this demo does not act on them: the
+      // status bar lists every public callback, and one that is never hooked up
+      // would sit at its initial value looking broken.
+      view.controller.onAnimationState = (type: AnimationType) => this.updateAvatar(uid, { animationState: type })
+      view.controller.onPlaybackStall = (stalled: boolean) => this.updateAvatar(uid, { stalled })
+      view.onFirstRendering = () => this.updateAvatar(uid, { rendered: true })
+      // Off by default and free while off, so it is switched on here to give the
+      // status bar something to report.
+      view.controller.frameRateMonitorEnabled = true
+      view.controller.onFrameRateInfo = (info) => {
+        // `fps` is the measured render rate; `presentationFps` is what actually
+        // reached the screen. Guarded because a window with no frames in it — a
+        // hidden tab, the gap between rounds — averages to NaN.
+        const fps = Number.isFinite(info.fps) ? Math.round(info.fps) : null
+        this.updateAvatar(uid, { fps })
+      }
+
       this._views.set(uid, view)
       this.updateAvatar(uid, { view, loading: false })
       return uid
@@ -92,6 +134,7 @@ export class AvatarManagerService {
       throw e
     }
   }
+
   removeAvatar(uid: string) {
     const view = this._views.get(uid)
     if (view) { view.controller.close(); view.dispose(); this._views.delete(uid) }

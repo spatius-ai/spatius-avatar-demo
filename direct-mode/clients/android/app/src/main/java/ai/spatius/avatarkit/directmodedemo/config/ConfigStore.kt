@@ -1,56 +1,61 @@
 package ai.spatius.avatarkit.directmodedemo.config
 
-import android.content.Context
 import ai.spatius.avatarkit.directmodedemo.BuildConfig
+import android.content.Context
 
-/** Credentials collected on the configuration step, mirroring the web demo's AppConfig. */
-data class AppConfig(
-    val appId: String,
-    val avatarId: String,
-    val sessionToken: String,
-    val region: String,
-)
+/** Which scene the playground opens in. */
+enum class Scene { Sample, Realtime }
+
+/** Which language the realtime conversation runs in. */
+enum class Lang { En, Zh }
 
 /**
- * Persists what the configuration step collects, so a reinstall-free relaunch
- * lands straight back in the playground.
+ * What this client chose, as opposed to what the backend holds.
  *
- * Values from `local.properties` (via BuildConfig) only seed the very first
- * run; once anything is saved here it wins, otherwise editing a field would
- * silently revert on the next launch.
+ * Credentials are deliberately absent: they live in the server's `.env` and never
+ * reach the device. All that is kept here is where the server is and what was picked
+ * on the configuration screen.
  */
+data class AppConfig(
+    /** The server's LAN address, typed in once — a phone cannot reach its localhost. */
+    val baseUrl: String,
+    val avatarId: String,
+    val scene: Scene,
+    val language: Lang,
+)
+
 object ConfigStore {
     private const val PREFS = "avatarkit-direct-demo-config"
-    private const val KEY_APP_ID = "appId"
+    private const val KEY_BASE_URL = "baseUrl"
     private const val KEY_AVATAR_ID = "avatarId"
-    private const val KEY_TOKEN = "sessionToken"
-    private const val KEY_REGION = "region"
+    private const val KEY_SCENE = "scene"
+    private const val KEY_LANGUAGE = "language"
 
-    val regions = listOf("auto", "us-west", "cn-beijing")
-
-    fun normalizeRegion(value: String?): String =
-        if (value != null && value in regions) value else "auto"
+    /** The four public sample avatars, the same set as the Web demo's characters.ts. */
+    val characters = listOf(
+        "41c62a7c-993c-4b6b-b6d3-549ce3c8be00" to "Kian",
+        "dbb01388-7c57-47bf-ab59-c492caeb9d90" to "Julian",
+        "d51ab422-3db7-47cc-afa8-7273b02bc70b" to "Clara",
+        "c7069121-8245-4015-9940-82d0dc0c6bda" to "Halima",
+    )
 
     fun load(context: Context): AppConfig {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val hasSaved = prefs.contains(KEY_APP_ID)
         return AppConfig(
-            appId = prefs.getString(KEY_APP_ID, null) ?: BuildConfig.SPATIUS_APP_ID,
-            avatarId = prefs.getString(KEY_AVATAR_ID, null) ?: BuildConfig.SPATIUS_AVATAR_ID,
-            sessionToken = prefs.getString(KEY_TOKEN, null).orEmpty(),
-            region = normalizeRegion(
-                if (hasSaved) prefs.getString(KEY_REGION, null) else BuildConfig.SPATIUS_REGION
-            ),
+            baseUrl = prefs.getString(KEY_BASE_URL, null) ?: BuildConfig.DIRECT_MODE_URL,
+            avatarId = prefs.getString(KEY_AVATAR_ID, null).orEmpty(),
+            scene = if (prefs.getString(KEY_SCENE, null) == "realtime") Scene.Realtime else Scene.Sample,
+            language = if (prefs.getString(KEY_LANGUAGE, null) == "zh") Lang.Zh else Lang.En,
         )
     }
 
     fun save(context: Context, config: AppConfig) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_APP_ID, config.appId)
+            .putString(KEY_BASE_URL, config.baseUrl)
             .putString(KEY_AVATAR_ID, config.avatarId)
-            .putString(KEY_TOKEN, config.sessionToken)
-            .putString(KEY_REGION, config.region)
+            .putString(KEY_SCENE, if (config.scene == Scene.Realtime) "realtime" else "sample")
+            .putString(KEY_LANGUAGE, if (config.language == Lang.Zh) "zh" else "en")
             .apply()
     }
 }

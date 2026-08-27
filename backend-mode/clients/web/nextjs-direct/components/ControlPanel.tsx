@@ -1,15 +1,77 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { AvatarController } from '@spatius/avatarkit'
 import type { AvatarInstance } from '@/hooks/useAvatarSDK'
-import { MicrophonePcmCapture } from '@/utils/audioCapture'
+import type { Scene } from '@/types'
+import RealtimePanel from '@/components/RealtimePanel'
+import { BackendClient, fetchConfig } from '@/utils/backendClient'
 
 interface AvatarSlot {
   uid: string
   index: number
   name: string
 }
+
+/**
+ * The SDK callbacks worth watching, in the order they first fire over a session's
+ * life: load, first frame, then the per-turn ones.
+ *
+ * Listed whether or not this demo acts on the value — which hooks exist is part of
+ * what a reference client is meant to show, and a row that only appears once it has
+ * fired is a row nobody knows to expect. A value of `—` means "registered, nothing
+ * reported yet".
+ *
+ * Two public callbacks are deliberately absent, since a row that can only ever read
+ * "ok" teaches nothing:
+ *   onPlaybackStall   only fires under FrameStarvationMode.strictSync, and the
+ *                     default mode lets audio keep playing through starvation
+ *   onAnimationState  reports the animation library, which is not public yet
+ * Both are still registered in useAvatarSDK, so wiring a row back on is one entry.
+ */
+const STATUS_ROWS: {
+  key: string
+  label: string
+  callback: string
+  help: string
+  read: (a: AvatarInstance) => string | null
+}[] = [
+  {
+    key: 'download',
+    label: 'Download',
+    callback: 'AvatarManager.load(id, onProgress)',
+    help: 'Model download progress, 0-100%. Only fires on a cache miss — a second load of the same avatar resolves straight away.',
+    read: a => (a.loading ? `${Math.round(a.loadProgress * 100)}%` : 'complete'),
+  },
+  {
+    key: 'rendered',
+    label: 'First frame',
+    callback: 'AvatarView.onFirstRendering',
+    help: 'Fires once, when the avatar has actually been drawn. This is the moment to take a loading overlay down.',
+    read: a => (a.rendered ? 'rendered' : 'waiting'),
+  },
+  {
+    key: 'conversation',
+    label: 'Conversation',
+    callback: 'AvatarController.onConversationState',
+    help: 'Playback state: idle, playing or paused. The controls over the avatar follow this.',
+    read: a => a.conversationState,
+  },
+  {
+    key: 'fps',
+    label: 'Frame rate',
+    callback: 'AvatarController.onFrameRateInfo',
+    help: 'Rolling render rate over a 2-second window. Off by default and free while off; this demo enables it via frameRateMonitorEnabled.',
+    read: a => (a.fps === null ? null : `${a.fps} fps`),
+  },
+  {
+    key: 'error',
+    label: 'Error',
+    callback: 'AvatarController.onError',
+    help: 'SDK failures — a malformed frame, a rendering problem. Worth surfacing rather than leaving to the console.',
+    read: a => a.error ?? 'none',
+  },
+]
 
 interface Props {
   activeAvatar: AvatarInstance | null
@@ -19,239 +81,195 @@ interface Props {
   activeUid?: string | null
   onSlotSelect?: (uid: string) => void
   onNotify?: (text: string, kind?: 'error' | 'warning') => void
+  /** Which scene is open — it decides what drives the avatar below the status bar. */
+  scene: Scene
+  /** The realtime scene's conversation language, chosen on the config page. */
+  language: string
 }
 
-const BACKEND_MODE_URL = process.env.NEXT_PUBLIC_BACKEND_MODE_WS_URL || 'ws://localhost:8765/ws/agent'
-const SAMPLE_RATE = 16000
+export default function ControlPanel({
+  activeAvatar,
+  activeController,
+  multiMode,
+  avatarSlots,
+  activeUid,
+  onSlotSelect,
+  onNotify,
+  scene,
+  language,
+}: Props) {
+  const [connected, setConnected] = useState(false)
+  /**
+   * The client, as state rather than only a ref.
+   *
+   * The panels below receive it as a prop, and a ref does not re-render: passing
+   * `clientRef.current` hands them whatever it was on first render — null — until
+   * some other state change happens to refresh them. Pressing the microphone in
+   * that window looks like a connection that never happened.
+   */
+  const [client, setClient] = useState<BackendClient | null>(null)
+  /** Which clip is playing, so only its own button says so. */
+  const [playingClip, setPlayingClip] = useState<string | null>(null)
+  const [clips, setClips] = useState<{ name: string; clip: string }[]>([])
+  const [clipsHint, setClipsHint] = useState('')
+  const clientRef = useRef<BackendClient | null>(null)
 
-function base64Decode(b64: string): Uint8Array {
-  const bin = atob(b64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return bytes
-}
+  const hasAvatar = !!activeAvatar?.view && !activeAvatar.loading
+  const sending = playingClip !== null
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary)
-}
-
-export default function ControlPanel({ activeAvatar, activeController, multiMode, avatarSlots, activeUid, onSlotSelect, onNotify }: Props) {
-  const [backendConnected, setHostConnected] = useState(false)
-  const [backendConnecting, setHostConnecting] = useState(false)
-  const [backendMicActive, setHostMicActive] = useState(false)
-  const [backendTextInput, setHostTextInput] = useState('')
-  const hostWsRef = useRef<WebSocket | null>(null)
-  const backendTurnMapRef = useRef(new Map<string, string>())
-  const microphoneRef = useRef<MicrophonePcmCapture | null>(null)
-  // Refs to track latest values inside WS callbacks
-  const activeControllerRef = useRef(activeController)
-  const activeAvatarRef = useRef(activeAvatar)
-  const backendConnectedRef = useRef(false)
-
-  const hasAvatar = activeAvatar?.view !== null && !activeAvatar?.loading
-
-  // Keep refs in sync
-  useEffect(() => { activeControllerRef.current = activeController }, [activeController])
-  useEffect(() => { activeAvatarRef.current = activeAvatar }, [activeAvatar])
-  useEffect(() => { backendConnectedRef.current = backendConnected }, [backendConnected])
-
-  // ========== Backend Mode ==========
-
-  const handleHostMessage = useCallback((msg: any) => {
-    const ctrl = activeControllerRef.current
-    const type = msg.type
-    if (type === 'ready') {
-      setHostConnected(true)
-      setHostConnecting(false)
-      backendConnectedRef.current = true
-      const avatarId = activeAvatarRef.current?.characterId || ''
-      hostWsRef.current?.send(JSON.stringify({ type: 'set_avatar', avatarId }))
-    } else if (type === 'avatar_audio') {
-      const audioB64 = msg.audio || ''
-      const turnId = msg.turnId
-      const isLast = msg.isLast ?? false
-      const audioBytes = audioB64 ? base64Decode(audioB64) : new Uint8Array(0)
-      const localCid = (ctrl as any)?.yieldAudioData(audioBytes, isLast)
-      if (localCid && !backendTurnMapRef.current.has(turnId)) {
-        backendTurnMapRef.current.set(turnId, localCid)
-      }
-    } else if (type === 'avatar_frames') {
-      const frames = (msg.frames || []).map((b64: string) => base64Decode(b64))
-      const localCid = backendTurnMapRef.current.get(msg.turnId)
-      if (localCid && frames.length) {
-        ;(ctrl as any)?.yieldFramesData(frames, localCid)
-      }
-      if (msg.isLast) {
-        backendTurnMapRef.current.delete(msg.turnId)
-      }
-    } else if (type === 'interrupt') {
-      ctrl?.interrupt()
-      backendTurnMapRef.current.clear()
-    } else if (type === 'error') {
-      console.error('Host server error:', msg.message)
+  // The clips live on the server, so the list comes from there rather than being
+  // repeated here — dropping a .pcm file into its assets directory is enough.
+  useEffect(() => {
+    let cancelled = false
+    fetchConfig()
+      .then(config => {
+        if (cancelled) return
+        setClips(config.clips ?? [])
+        setClipsHint(config.clipsHint ?? '')
+      })
+      .catch(() => {
+        // Not worth reporting: the connection itself surfaces a server that is down.
+      })
+    return () => {
+      cancelled = true
     }
   }, [])
 
-  const backendConnect = useCallback(async () => {
-    if (hostWsRef.current || backendConnecting) return
-    setHostConnecting(true)
-    try {
-      await (activeControllerRef.current as any)?.initializeAudioContext()
-    } catch (e) {
-      console.error('Audio context init failed:', e)
-      setHostConnecting(false)
-      return
-    }
+  // The controller changes when a different character is selected, and the client
+  // outlives that — so it is handed the current one rather than closing over it.
+  useEffect(() => {
+    clientRef.current?.setController(activeController)
+  }, [activeController])
 
-    const ws = new WebSocket(BACKEND_MODE_URL)
-    hostWsRef.current = ws
+  /**
+   * Open the connection as soon as there is an avatar to render into.
+   *
+   * Nothing to ask the user here: in Backend Mode this is a WebSocket to the demo's
+   * own server, not a session that costs anything, and every control below is dead
+   * until it exists. Direct Mode has a Start button because there the client opens
+   * the Motion Server connection itself.
+   */
+  useEffect(() => {
+    if (!hasAvatar || !activeController || clientRef.current) return
 
-    ws.onmessage = (event) => {
-      let msg: any
-      try { msg = JSON.parse(event.data) } catch { return }
-      handleHostMessage(msg)
-    }
-    ws.onerror = () => {
-      console.error('Host server connection failed')
-      setHostConnecting(false)
-      setHostConnected(false)
-      backendConnectedRef.current = false
-    }
-    ws.onclose = () => {
-      hostWsRef.current = null
-      setHostConnected(false)
-      setHostConnecting(false)
-      setHostMicActive(false)
-      backendConnectedRef.current = false
-    }
-  }, [backendConnecting, handleHostMessage])
+    let cancelled = false
+    const client = new BackendClient({
+      onError: (message) => onNotify?.(message),
+      onClosed: () => {
+        setConnected(false)
+        setPlayingClip(null)
+        clientRef.current = null
+        setClient(null)
+      },
+    })
+    client.setController(activeController)
+    clientRef.current = client
 
-  const backendDisconnect = useCallback(() => {
-    if (microphoneRef.current) {
-      microphoneRef.current.stop()
-      microphoneRef.current = null
-      setHostMicActive(false)
-    }
-    if (hostWsRef.current) {
-      hostWsRef.current.close()
-      hostWsRef.current = null
-    }
-    setHostConnected(false)
-    backendConnectedRef.current = false
-    backendTurnMapRef.current.clear()
-  }, [])
-
-  const toggleMic = useCallback(async () => {
-    if (backendMicActive) {
-      // Stop mic
-      if (microphoneRef.current) {
-        await microphoneRef.current.stop()
-        microphoneRef.current = null
-      }
-      setHostMicActive(false)
-      if (hostWsRef.current?.readyState === WebSocket.OPEN) {
-        hostWsRef.current.send(JSON.stringify({ type: 'mic_end' }))
-      }
-    } else {
-      // Start mic — auto-connect if needed
-      if (!backendConnectedRef.current) {
-        await backendConnect()
-        // Wait for ready
-        await new Promise<void>((resolve) => {
-          const check = setInterval(() => {
-            if (backendConnectedRef.current) { clearInterval(check); resolve() }
-          }, 100)
-          setTimeout(() => { clearInterval(check); resolve() }, 3000)
-        })
-      }
-      if (!backendConnectedRef.current) return
-      const mic = new MicrophonePcmCapture(SAMPLE_RATE)
-      microphoneRef.current = mic
-      await mic.start((chunk: Uint8Array) => {
-        if (hostWsRef.current?.readyState === WebSocket.OPEN) {
-          hostWsRef.current.send(JSON.stringify({ type: 'mic_audio', audio: bytesToBase64(chunk) }))
-        }
+    client
+      .connect()
+      .then(() => {
+        if (cancelled) return
+        if (activeAvatar?.characterId) client.setAvatar(activeAvatar.characterId)
+        setClient(client)
+        setConnected(true)
       })
-      setHostMicActive(true)
-    }
-  }, [backendMicActive, backendConnect])
-
-  const sendTextQuery = useCallback(async () => {
-    const text = backendTextInput.trim()
-    if (!text) return
-    if (!backendConnectedRef.current) {
-      await backendConnect()
-      await new Promise<void>((resolve) => {
-        const check = setInterval(() => {
-          if (backendConnectedRef.current) { clearInterval(check); resolve() }
-        }, 100)
-        setTimeout(() => { clearInterval(check); resolve() }, 3000)
+      .catch((e) => {
+        if (cancelled) return
+        onNotify?.(e?.message ?? 'Could not reach the Backend Mode server')
+        clientRef.current = null
+        setClient(null)
       })
-    }
-    if (hostWsRef.current?.readyState === WebSocket.OPEN) {
-      hostWsRef.current.send(JSON.stringify({ type: 'text_query', text }))
-      setHostTextInput('')
-    }
-  }, [backendTextInput, backendConnect])
 
-  const [paused, setPaused] = useState(false)
-
-  const handleTogglePause = () => {
-    if (paused) {
-      activeController?.resume()
-    } else {
-      activeController?.pause()
+    return () => {
+      cancelled = true
     }
-    setPaused(!paused)
-  }
-  const handleInterrupt = () => {
-    activeController?.interrupt()
-    if (microphoneRef.current) { microphoneRef.current.stop(); microphoneRef.current = null; setHostMicActive(false) }
-    if (hostWsRef.current?.readyState === WebSocket.OPEN) {
-      hostWsRef.current.send(JSON.stringify({ type: 'interrupt' }))
-    }
-    backendTurnMapRef.current.clear()
-  }
+    // activeAvatar.characterId is deliberately absent: switching character should
+    // send set_avatar (the effect below), not tear the connection down.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAvatar, activeController, onNotify])
 
-  // Cleanup on unmount
+  /**
+   * The audio context has to be created inside a user gesture — a browser will not
+   * allow it otherwise, and the avatar then renders in silence with nothing
+   * reported. So it is done on the first press of whatever the scene's button is,
+   * rather than needing a button of its own.
+   */
+  const ensureAudioContext = useCallback(async () => {
+    await activeController?.initializeAudioContext()
+  }, [activeController])
+
+  // Which avatar the server should drive, kept in step with what is on screen.
+  useEffect(() => {
+    if (connected && activeAvatar?.characterId) {
+      clientRef.current?.setAvatar(activeAvatar.characterId)
+    }
+  }, [connected, activeAvatar?.characterId])
+
   useEffect(() => {
     return () => {
-      if (microphoneRef.current) { microphoneRef.current.stop(); microphoneRef.current = null }
-      if (hostWsRef.current) { hostWsRef.current.close(); hostWsRef.current = null }
+      clientRef.current?.close()
+      clientRef.current = null
     }
   }, [])
+
+  const playSample = useCallback(async (clip: string) => {
+    if (!clientRef.current) return
+    await ensureAudioContext()
+    setPlayingClip(clip)
+    clientRef.current.playSample(clip)
+    // The server streams the clip and reports nothing when it finishes, so this is
+    // released on the next conversation state change rather than by a reply.
+  }, [ensureAudioContext])
+
+  // The avatar going back to idle is what says the clip has finished playing.
+  useEffect(() => {
+    if (sending && activeAvatar?.conversationState === 'idle') {
+      const timer = window.setTimeout(() => setPlayingClip(null), 500)
+      return () => window.clearTimeout(timer)
+    }
+  }, [sending, activeAvatar?.conversationState])
 
   return (
     <div className="control-panel">
       <h3>Controls</h3>
+
       {activeAvatar && (
         <div className="status-bar">
-          <div className="status-row">
-            <span className="status-label">Server</span>
-            <span className="status-value">
-              {backendConnected ? 'connected' : backendConnecting ? 'connecting...' : 'disconnected'}
-            </span>
-          </div>
-          <div className="status-row">
-            <span className="status-label">Conversation</span>
-            <span className="status-value">{activeAvatar.conversationState}</span>
-          </div>
-          {activeAvatar.error && (
-            <div className="status-row error">
-              <span className="status-label">Error</span>
-              <span className="status-value error-text">{activeAvatar.error}</span>
-            </div>
-          )}
+          {STATUS_ROWS.map(row => {
+            const value = row.read(activeAvatar)
+            return (
+              <div className={`status-row ${row.key === 'error' && value && value !== 'none' ? 'error' : ''}`} key={row.key}>
+                <span className="status-label">
+                  {row.label}
+                  <span className="status-help" tabIndex={0}>
+                    ?
+                    <span className="status-tip" role="tooltip">
+                      <code>{row.callback}</code>
+                      <span>{row.help}</span>
+                    </span>
+                  </span>
+                </span>
+                <span
+                  className={`status-value ${row.key === 'error' && value && value !== 'none' ? 'error-text' : ''} ${value === null ? 'status-idle' : ''}`}
+                >
+                  {value ?? '—'}
+                </span>
+              </div>
+            )
+          })}
         </div>
       )}
+
       {multiMode && avatarSlots && avatarSlots.length > 0 && (
         <div className="slot-selector">
           <h4>Active Avatar</h4>
           <div className="slot-list">
             {avatarSlots.map(s => (
-              <button key={s.uid} className={`slot-btn ${s.uid === activeUid ? 'active' : ''}`} onClick={() => onSlotSelect?.(s.uid)}>
+              <button
+                key={s.uid}
+                className={`slot-btn ${s.uid === activeUid ? 'active' : ''}`}
+                onClick={() => onSlotSelect?.(s.uid)}
+              >
                 <span className="slot-index">{s.index}</span>
                 <span className="slot-name">{s.name}</span>
               </button>
@@ -259,53 +277,43 @@ export default function ControlPanel({ activeAvatar, activeController, multiMode
           </div>
         </div>
       )}
+
       {!hasAvatar && <p className="panel-hint">Load a character first</p>}
-      {hasAvatar && (
-        <>
-          <div className="btn-row" style={{ marginBottom: 8 }}>
-            {!backendConnected ? (
-              <button className="primary" disabled={backendConnecting} onClick={backendConnect}>
-                {backendConnecting ? 'Connecting...' : 'Connect'}
-              </button>
-            ) : (
-              <button className="secondary" onClick={backendDisconnect}>
-                Disconnect
-              </button>
-            )}
-          </div>
 
-          <button
-            className={`full-width ${backendMicActive ? 'danger' : 'primary'}`}
-            disabled={!hasAvatar}
-            onClick={toggleMic}
-          >
-            {backendMicActive ? 'Stop Mic' : 'Start Mic'}
-          </button>
-
-          <form className="host-text-form" onSubmit={(e) => { e.preventDefault(); sendTextQuery() }} style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="Type a message..."
-              className="host-text-input"
-              disabled={!hasAvatar}
-              value={backendTextInput}
-              onChange={(e) => setHostTextInput(e.target.value)}
-            />
-            <button type="submit" className="primary" disabled={!backendTextInput.trim() || !hasAvatar}>
-              Send
-            </button>
-          </form>
-
-          <p className="host-hint">
-            Connects to <code>{BACKEND_MODE_URL}</code>.
-            Using Backend Mode server — see <a href="https://github.com/spatius-ai/spatius-avatar-demo" target="_blank" rel="noreferrer">github.com/spatius-ai/spatius-avatar-demo</a>.
-          </p>
-        </>
+      {/* What drives the avatar, and the only thing that differs between the two
+          scenes. Both are driven server-side and arrive here as the same audio +
+          motion messages. */}
+      {hasAvatar && scene === 'realtime' && (
+        <RealtimePanel
+          client={client}
+          connected={connected}
+          language={language}
+          onBeforeStart={ensureAudioContext}
+          onNotify={onNotify}
+        />
       )}
-      {hasAvatar && (
-        <div className="btn-row">
-          <button className="secondary" onClick={handleTogglePause}>{paused ? 'Resume' : 'Pause'}</button>
-          <button className="danger" onClick={handleInterrupt}>Interrupt</button>
+
+      {hasAvatar && scene !== 'realtime' && (
+        <div className="audio-list">
+          <h4>
+            Pre-recorded audio
+            {clipsHint && <span className="audio-hint" title={clipsHint}>?</span>}
+          </h4>
+          {clips.map(c => (
+            <button
+              key={c.clip}
+              className="secondary full-width audio-btn"
+              disabled={!connected || sending}
+              onClick={() => void playSample(c.clip)}
+            >
+              {playingClip === c.clip ? '...' : `▶ ${c.name}`}
+            </button>
+          ))}
+          <p className="realtime-hint">
+            The clips live on the server and never pass through this page: one is
+            streamed straight into the avatar, and what arrives here is the encoded
+            audio and motion to render.
+          </p>
         </div>
       )}
     </div>

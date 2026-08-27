@@ -1,70 +1,56 @@
 <script setup lang="ts">
-import Toast from './components/Toast.vue'
-import { ref, onMounted } from 'vue'
-import { AvatarSDK, DrivingServiceMode, LogLevel } from '@spatius/avatarkit'
+import { ref } from 'vue'
+import { DrivingServiceMode } from '@spatius/avatarkit'
+import Configuration from './views/Configuration.vue'
 import Playground from './views/Playground.vue'
 import './App.css'
 
-const ready = ref(false)
-const error = ref<string | null>(null)
+/**
+ * Which scene the playground opens in. Both are driven server-side and reach this
+ * client as the same audio + motion messages — they differ only in where the audio
+ * came from.
+ */
+export type Scene = 'sample' | 'realtime'
 
-function deriveHttpBase(): string {
-  const wsUrl = import.meta.env.VITE_BACKEND_MODE_WS_URL || 'ws://localhost:8765/ws/agent'
-  const httpUrl = wsUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws\/agent$/, '')
-  return httpUrl
+/** Which language the realtime conversation runs in. */
+export type Lang = 'en' | 'zh'
+
+export interface AppConfig {
+  appId: string
+  region: string
+  scene: Scene
+  /**
+   * Recognition, synthesis and the agent's persona all follow this, and all three
+   * are fixed when the agent session is built — which is why it is chosen here
+   * rather than switched inside the scene.
+   */
+  language: Lang
+  /** Only the realtime scene reaches an agent, so this is absent for the other. */
+  livekit?: {
+    url: string
+    apiKey: string
+    apiSecret: string
+  }
 }
 
-onMounted(async () => {
-  const httpBase = deriveHttpBase()
+const MODE = DrivingServiceMode.backend
 
-  let appId: string
-  let region: string | undefined
-  try {
-    const res = await fetch(`${httpBase}/api/config`)
-    if (!res.ok) throw new Error(`Server returned ${res.status}`)
-    const config = await res.json()
-    appId = config.appId
-    region = config.region
-    if (!appId) throw new Error('Server returned empty appId')
-  } catch (e: any) {
-    // Try /healthz to give a more specific error message
-    try {
-      const healthRes = await fetch(`${httpBase}/healthz`)
-      const health = await healthRes.json()
-      if (!health.ok && health.missing?.length) {
-        error.value = `Server missing config: ${health.missing.join(', ')}`
-        return
-      }
-    } catch {
-      // healthz also failed
-    }
-    error.value = `Failed to fetch config from ${httpBase}/api/config: ${e.message}`
-    return
-  }
+const step = ref<1 | 2>(1)
+const config = ref<AppConfig | null>(null)
 
-  try {
-    await AvatarSDK.initialize(appId, {
-      drivingServiceMode: DrivingServiceMode.backend,
-      audioFormat: { channelCount: 1, sampleRate: 16000 },
-      logLevel: LogLevel.all,
-      ...(region ? { region } : {}),
-    })
-    ready.value = true
-  } catch (e: any) {
-    error.value = e.message || 'SDK initialization failed'
-  }
-})
+function handleInitialized(c: AppConfig) {
+  config.value = c
+  step.value = 2
+}
 </script>
 
 <template>
   <div class="app">
-    <div v-if="error" class="init-error">
-      <a href="https://app.spatius.ai" target="_blank" rel="noreferrer">
-        <img src="/api-key-guide.png" alt="API Key Guide" style="max-width: 100%; border-radius: 10px; margin-bottom: 16px;" />
-      </a>
-      <p>{{ error }}</p>
+    <div :class="['view', { active: step === 1 }]">
+      <Configuration :mode="MODE" @initialized="handleInitialized" />
     </div>
-    <Playground v-if="ready" />
+    <div :class="['view', { active: step === 2 }]">
+      <Playground v-if="config && step === 2" :mode="MODE" :config="config" />
+    </div>
   </div>
-  <Toast />
 </template>

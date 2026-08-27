@@ -4,8 +4,14 @@ import AVFoundation
 import AvatarKit
 
 @MainActor class AvatarViewModel: ObservableObject {
+    // What the SDK reports back, one property per public callback. Every one is
+    // registered whether or not this demo acts on it: which hooks exist is part of
+    // what a reference client is for, and a row that only appears once it has fired
+    // is a row nobody knows to expect.
     @Published var connectionState: String = "\(ConnectionState.disconnected)"
     @Published var conversationState: String = "\(ConversationState.idle)"
+    /// onFrameRateInfo — nil until the monitor has reported once.
+    @Published var fps: Int?
     @Published var errorMessage: String?
     @Published var avatar: Avatar?
 
@@ -13,9 +19,34 @@ import AvatarKit
     @Published var backendConnected = false
     @Published var backendConnecting = false
     @Published var backendMicActive = false
+    /// Which clip is streaming, so only its own row says so.
+    @Published var playingClip: String?
 
     private var isConnected = false
     private var avatarController: AvatarController?
+
+    /// Where the server is. Told once by the view, since the address is typed on the
+    /// configuration screen rather than compiled in — a phone cannot reach the dev
+    /// machine's localhost.
+    var backendBaseURL = Config.backendModeURL
+
+    /// Which language the agent should listen and reply in, chosen on the
+    /// configuration screen. Fixed for the session: recognition, the voice and the
+    /// persona are all set when the agent session is built.
+    var language = "en"
+
+    /// Whether `start_agent` has been sent on this connection.
+    private var agentStarted = false
+
+    /// Ask the server to bring the agent up, once per connection.
+    ///
+    /// The pre-recorded scene never calls this — it costs a model session, and a clip
+    /// needs no agent at all.
+    private func ensureAgent() {
+        guard !agentStarted, let ws = hostWsTask, ws.state == .running else { return }
+        agentStarted = true
+        ws.send(.string(jsonString(["type": "start_agent", "language": language]))) { _ in }
+    }
 
     func setAvatarController(_ controller: AvatarController) {
         avatarController = controller
@@ -36,22 +67,53 @@ import AvatarKit
         avatarController?.onConversationState = { [weak self] state in
             guard let self else { return }
             self.conversationState = "\(state)"
+            // The server streams a clip and reports nothing when it finishes, so the
+            // avatar going back to idle is what says playback is over.
+            if "\(state)" == "\(ConversationState.idle)" {
+                self.playingClip = nil
+            }
         }
         avatarController?.onError = { [weak self] error in
             self?.errorMessage = error.localizedDescription
         }
+        // Off by default and free while off, so it is switched on here to give the
+        // status bar something to report.
+        avatarController?.frameRateMonitorEnabled = true
+        avatarController?.onFrameRateInfo = { [weak self] info in
+            self?.fps = info.fps.isFinite ? Int(info.fps.rounded()) : nil
+        }
+    }
+
+    /// Tell the server which avatar it is driving.
+    ///
+    /// Sent on connect and again on every character change: the WebSocket outlives the
+    /// avatar, so without this the server keeps driving the one it was first told
+    /// about and the motion no longer matches what is on screen.
+    func setAvatar(_ avatarId: String) {
+        guard !avatarId.isEmpty, let ws = hostWsTask, ws.state == .running else { return }
+        ws.send(.string(jsonString(["type": "set_avatar", "avatarId": avatarId]))) { _ in }
+    }
+
+    /// Ask the server to stream one of its clips into the avatar.
+    ///
+    /// The clips live on the server and never pass through this app: what arrives
+    /// here is the encoded audio and motion to render, exactly as in the realtime
+    /// scene. Only where the audio came from differs.
+    func playSample(_ clip: String) {
+        guard let ws = hostWsTask, ws.state == .running else { return }
+        playingClip = clip
+        ws.send(.string(jsonString(["type": "play_sample", "clip": clip]))) { _ in }
     }
 
     func start() { avatarController?.start() }
     func pause() { avatarController?.pause() }
     func resume() { avatarController?.resume() }
 
+    /// Cut off what the avatar is saying.
+    ///
+    /// The microphone stays open: interrupting means "stop talking", not "I am done
+    /// talking" — closing it here made every interruption end the turn as well.
     func interrupt() {
-        backendStopMic()
-        if let ws = hostWsTask, ws.state == .running {
-            ws.send(.string(jsonString(["type": "interrupt"]))) { _ in }
-        }
-        backendTurnMap.removeAll()
         avatarController?.interrupt()
     }
 
@@ -65,16 +127,16 @@ import AvatarKit
 
     // MARK: - Backend Mode
 
+    /// Derived from the address typed on the configuration screen, so there is only
+    /// ever one thing to enter.
     private var backendModeURL: URL {
-        let base = Config.backendModeURL
-            .replacingOccurrences(of: "http://", with: "ws://")
-            .replacingOccurrences(of: "https://", with: "wss://")
-        return URL(string: "\(base)/ws/agent")!
+        URL(string: BackendClient.agentURL(baseURL: backendBaseURL))!
     }
     private var hostWsTask: URLSessionWebSocketTask?
     private var hostSession: URLSession?
     private var hostReceiveTask: Task<Void, Never>?
-    private var backendTurnMap: [String: String] = [:]
+    /// The id `yieldAudioData` handed back, which frames for the same reply need.
+    private var conversationId: String?
 
     // Microphone
     private var audioEngine: AVAudioEngine?
@@ -97,6 +159,7 @@ import AvatarKit
     }
 
     func backendDisconnect() {
+        agentStarted = false
         backendStopMic()
         hostReceiveTask?.cancel()
         hostReceiveTask = nil
@@ -105,15 +168,23 @@ import AvatarKit
         hostSession = nil
         backendConnected = false
         backendConnecting = false
-        backendTurnMap.removeAll()
+        conversationId = nil
     }
 
     func backendStartMic() {
         guard backendConnected, !backendMicActive else { return }
 
+        // Brought up on the first press rather than on connect: the agent costs a
+        // model session, and someone who only wants the pre-recorded scene should not
+        // pay for one by opening the app.
+        ensureAgent()
+
+        // .voiceChat asks for the echo-cancelling route, which keeps the avatar's own
+        // voice out of the microphone — without it the agent transcribes its own reply
+        // back to itself.
         let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true)
         } catch {
             errorMessage = "Audio session error: \(error.localizedDescription)"
@@ -123,6 +194,18 @@ import AvatarKit
         let engine = AVAudioEngine()
         audioEngine = engine
         let inputNode = engine.inputNode
+
+        // The session mode alone does not switch cancellation on: the AEC lives in the
+        // input's IO unit and starts disabled. Browsers do this for you —
+        // getUserMedia's echoCancellation is on by default — which is why the Web
+        // client needs no equivalent.
+        //
+        // Set before the tap is installed: toggling it reconfigures the node, and the
+        // format read below has to be the one that ends up in effect.
+        if #available(iOS 13.0, *) {
+            try? inputNode.setVoiceProcessingEnabled(true)
+        }
+
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         // Target format: 16kHz mono Int16
@@ -173,6 +256,12 @@ import AvatarKit
         guard backendMicActive else { return }
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
+        // Turned back off with the tap: voice processing stays on the node otherwise,
+        // and it keeps the session in its duplex route — which thins out the avatar's
+        // voice on the next clip even though nothing is recording.
+        if #available(iOS 13.0, *) {
+            try? audioEngine?.inputNode.setVoiceProcessingEnabled(false)
+        }
         audioEngine = nil
         backendMicActive = false
 
@@ -182,6 +271,8 @@ import AvatarKit
     }
 
     func backendSendText(_ text: String) {
+        // Same as the microphone: the agent is what turns a line into speech.
+        ensureAgent()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -218,7 +309,7 @@ import AvatarKit
                     self.backendConnecting = false
                     self.backendMicActive = false
                     self.hostWsTask = nil
-                    self.backendTurnMap.removeAll()
+                    self.conversationId = nil
                 }
                 break
             }
@@ -240,44 +331,54 @@ import AvatarKit
     }
 
     private func handleHostMessage(type: String, json: [String: Any]) {
-        guard let controller = avatarController else { return }
-
+        // No blanket guard on the controller: `ready` arrives while the AvatarView is
+        // still being made, and dropping it there left `backendConnected` false for
+        // the rest of the session — every control stayed disabled and the server was
+        // never told which avatar to drive. Only the frames actually need one.
         switch type {
         case "ready":
             backendConnected = true
             backendConnecting = false
             let avatarId = avatar?.id ?? ""
             hostWsTask?.send(.string(jsonString(["type": "set_avatar", "avatarId": avatarId]))) { _ in }
+            return
 
+        default:
+            break
+        }
+
+        guard let controller = avatarController else { return }
+
+        switch type {
         case "avatar_audio":
-            guard let turnId = json["turnId"] as? String else { return }
             let audioB64 = json["audio"] as? String ?? ""
             let audioData = audioB64.isEmpty ? Data() : (Data(base64Encoded: audioB64) ?? Data())
             let isLast = json["isLast"] as? Bool ?? false
-            let cid = controller.yieldAudioData(audioData, end: isLast)
-            if backendTurnMap[turnId] == nil {
-                backendTurnMap[turnId] = cid
-            }
+            // Kept from every call, not just the first: the id identifies the round
+            // the frames below belong to, and holding the one handed back at the
+            // start of a reply sends later frames to a round that has already ended.
+            // A nil return means "no change", so the last known id stands.
+            conversationId = controller.yieldAudioData(audioData, end: isLast) ?? conversationId
 
         case "avatar_frames":
-            guard let turnId = json["turnId"] as? String,
-                  let framesArr = json["frames"] as? [String] else { return }
+            guard let framesArr = json["frames"] as? [String],
+                  let cid = conversationId else { return }
             let frames = framesArr.compactMap { Data(base64Encoded: $0) }
-            let isLast = json["isLast"] as? Bool ?? false
-            if let cid = backendTurnMap[turnId], !frames.isEmpty {
+            if !frames.isEmpty {
                 controller.yieldFramesData(frames, conversationID: cid)
-            }
-            if isLast {
-                backendTurnMap.removeValue(forKey: turnId)
             }
 
         case "interrupt":
-            backendTurnMap.removeAll()
+            conversationId = nil
             controller.interrupt()
 
         case "error":
             let errMsg = json["message"] as? String ?? "Unknown error"
             errorMessage = errMsg
+            // A clip that never starts leaves its button on "..." forever: the
+            // release comes from the avatar returning to idle, and a turn that was
+            // rejected never enters playing in the first place.
+            playingClip = nil
 
         default:
             break

@@ -9,10 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@spatius/avatarkit": "1.3.4-beta.1"
+    "@spatius/avatarkit": "^1.3.7"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "vite": "^5.0.0"
+    "typescript": "^5.9.0",
+    "vite": "^8.2.0"
   }
 }

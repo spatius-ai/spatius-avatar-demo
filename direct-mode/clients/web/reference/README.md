@@ -1,70 +1,72 @@
-# SDK Web (Mic + Local VAD + Browser LLM)
+# Direct Mode — Web reference clients
 
-## Purpose
+The same client, written five times. They differ only in how they draw a button:
+the flow, the backend calls and the SDK lifecycle are identical, so pick whichever
+matches your stack and read that one.
 
-This sample runs `ASR + LLM + TTS` in the browser:
+| Framework | Directory | Dev URL |
+| --- | --- | --- |
+| React | [`react/`](./react) | http://localhost:5173 |
+| Vue | [`vue/`](./vue) | http://localhost:5174 |
+| Vanilla TS | [`vanilla/`](./vanilla) | http://localhost:5175 |
+| Next.js (direct import) | [`nextjs-direct/`](./nextjs-direct) | http://localhost:3000 |
+| Next.js (iframe) | [`nextjs-iframe/`](./nextjs-iframe) | http://localhost:3001 |
 
-- Capture microphone input
-- Segment speech with local VAD
-- Call model APIs from web client
-- Send synthesized audio to AvatarKit in Direct Mode
+Logic shared by all five lives in [`../shared/src`](../shared/src) — the backend
+calls, the session token exchange and the scene helpers.
 
 ## Run
 
+The server holds the credentials and mints Session Tokens, so it starts first:
+
 ```bash
-cp .env.example .env
+cd ../../../servers/python
+cp .env.example .env    # fill SPATIUS_API_KEY and SPATIUS_APP_ID
+uv run app.py
+```
+
+Then any one client, in a second terminal:
+
+```bash
+cd react        # or vue, vanilla, nextjs-direct, nextjs-iframe
 pnpm install
 pnpm dev
 ```
 
-Default URL: `http://localhost:3001`
+There is no client-side `.env`. Direct Mode keeps the API Key on the server, and
+anything left blank there can be filled in on the configuration page instead —
+which is what makes the demo reachable from a phone on the same network.
 
-## Required Backend
+## The two scenes
 
-Run one token service in parallel:
+Both drive the avatar through the same `controller.send()`; they differ only in
+where the audio comes from.
 
-- `../../servers/python`
-- `../../servers/nodejs`
-- `../../servers/go`
+- **Pre-recorded audio** streams a bundled PCM clip. Needs only the two Spatius
+  values.
+- **Realtime conversation** captures the microphone and runs a voice agent on the
+  server, so it also needs the LiveKit section of the server's `.env`. LiveKit is
+  used for Inference only, not for a room.
 
-## Usage
+## The two Next.js demos
 
-1. Configure keys in `.env`.
-2. Click `Initialize & Connect Avatar`.
-3. Click `Start Microphone` and allow mic permission.
-4. Local VAD triggers `ASR -> LLM -> TTS -> Avatar` on pause.
-5. Text input remains available as fallback.
+They exist to show the two ways of getting a WebGL SDK past server rendering:
 
-## Key Variables
-
-- `VITE_OPENAI_API_KEY`
-- `VITE_OPENAI_STT_LANGUAGE` (default `en`)
-- `VITE_CARTESIA_API_KEY` (only for Cartesia TTS)
-- `VITE_VAD_START_THRESHOLD`
-- `VITE_VAD_STOP_THRESHOLD`
-- `VITE_VAD_SILENCE_MS`
-- `VITE_VAD_MIN_SPEECH_MS`
-
-The web client validates env values and shows actionable messages if values are missing or still placeholders.
-
-## Security Note
-
-Direct model API calls from browser are for demo/internal testing only.
-Use backend proxy + secret management in production.
-
-## References
-
-- Web SDK API: https://docs.spatius.ai/direct-mode/web
-- OpenAI Chat Completions (stream): https://platform.openai.com/docs/api-reference/chat/create
-- OpenAI Audio Transcriptions: https://platform.openai.com/docs/api-reference/audio/createTranscription
-- OpenAI Audio Speech: https://platform.openai.com/docs/api-reference/audio/createSpeech
+- **`nextjs-direct`** imports the SDK into the app bundle and defers the whole
+  client tree with `next/dynamic({ ssr: false })`. `'use client'` alone is not
+  enough — a client component is still rendered once on the server to produce the
+  initial HTML, and the SDK reaches for `location` and WebGL as it initialises.
+- **`nextjs-iframe`** puts the SDK in a separate document instead, served under
+  `/iframe/`, so it never enters the server pass at all.
 
 ## About the bundled audio
 
-The clips shipped with this demo are samples, not a constraint. `send()` takes
+The clips shipped with these demos are samples, not a constraint. `send()` takes
 any PCM16 audio at the configured sample rate — live microphone capture, a TTS
 stream, or audio from your own pipeline all go through the same call. Files are
-bundled so the demo runs with nothing but an App ID and a Session Token.
+bundled so the demo runs with nothing but an App ID and an API Key.
 
-See [Direct Mode](../../../README.md#about-the-audio-in-these-demos) for the full picture.
+## References
 
+- [Web SDK API](https://docs.spatius.ai/direct-mode/web)
+- [Direct Mode overview](../../../README.md)

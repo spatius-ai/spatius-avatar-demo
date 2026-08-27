@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useEffect } from 'react'
 import type { AvatarInstance } from '../hooks/useAvatarSDK'
 
 interface Props {

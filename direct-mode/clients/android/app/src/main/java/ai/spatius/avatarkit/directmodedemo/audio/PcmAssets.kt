@@ -13,13 +13,12 @@ import kotlinx.coroutines.withContext
 data class PcmAsset(val name: String, val path: String)
 
 /**
- * Shown next to the clip list so nobody reads the bundled files as the limit of
- * what Direct Mode accepts.
+ * Shown under the clip list so nobody reads the bundled files as the limit of what
+ * Direct Mode accepts.
  */
 const val AUDIO_SOURCE_HINT =
-    "These clips are bundled samples, not a limitation. send() takes any PCM16 audio " +
-        "at the configured sample rate — stream it live from a microphone, a TTS service, " +
-        "or your own pipeline the same way. The demo ships files so it runs without extra setup."
+    "Bundled samples, not a limit: send() takes any PCM16 audio at the configured " +
+        "sample rate — a microphone, a TTS service, your own pipeline."
 
 /** Same clips the web demo ships, so both demos show identical behaviour. */
 val PCM_ASSETS = listOf(

@@ -52,14 +52,26 @@
 
 ## Demos
 
-> **New here?** Start with [`direct-mode/clients/web/quickstart`](./direct-mode/clients/web/quickstart) to validate the Web SDK with bundled sample audio, then switch the same UI to realtime conversation when you have a provider key. Use [`livekit-agent-quickstart`](./platform-integrations/livekit-agents-demo/livekit-agent-quickstart) for the fastest Web voice-agent path.
+> **New here?** Start with [`direct-mode`](./direct-mode): run its server, then the
+> React client, and play the bundled sample audio. Switch the same UI to realtime
+> conversation once you have LiveKit credentials.
 
-| Platform | Direct Mode | Backend Mode | LiveKit Agents Integration |
+The three modes differ only in who holds the Motion Server connection:
+
+| Mode | Who connects to Motion Server | Scenes |
+| --- | --- | --- |
+| [**Direct**](./direct-mode) | the client | sample audio, realtime conversation |
+| [**Backend**](./backend-mode) | the server | sample audio, realtime conversation |
+| [**RTC**](./rtc-mode) | neither — the avatar joins the call itself | realtime conversation |
+
+| Platform | Direct Mode | Backend Mode | RTC Mode |
 | --- | --- | --- | --- |
-| **Web** | [`quickstart`](./direct-mode/clients/web/quickstart) for bundled sample audio plus optional realtime conversation; [`reference`](./direct-mode/clients/web/reference) for multi-framework clients | [`backend-mode/clients/web`](./backend-mode/clients/web) | [`livekit-agent-quickstart`](./platform-integrations/livekit-agents-demo/livekit-agent-quickstart), [`livekit-agents`](./platform-integrations/livekit-agents-demo/livekit-agents-reference-demo) |
-| **iOS** | [`direct-mode/clients/ios`](./direct-mode/clients/ios) | [`backend-mode/clients/ios`](./backend-mode/clients/ios) | Not provided today; current Spatius AvatarKit RTC demo path is Web-only |
-| **Android** | [`direct-mode/clients/android`](./direct-mode/clients/android) | [`backend-mode/clients/android`](./backend-mode/clients/android) | Not provided today; current Spatius AvatarKit RTC demo path is Web-only |
-| **Flutter** | [`direct-mode/clients/flutter`](./direct-mode/clients/flutter) | [`backend-mode/clients/flutter`](./backend-mode/clients/flutter) | Not provided today; current Spatius AvatarKit RTC demo path is Web-only |
+| **Web** | [`direct-mode/clients/web/reference`](./direct-mode/clients/web/reference) — React, Vue, vanilla, Next.js | [`backend-mode/clients/web`](./backend-mode/clients/web) | [`rtc-mode/clients/web`](./rtc-mode/clients/web) |
+| **iOS** | [`direct-mode/clients/ios`](./direct-mode/clients/ios) | [`backend-mode/clients/ios`](./backend-mode/clients/ios) | Not provided today; the RTC Mode demo path is Web-only |
+| **Android** | [`direct-mode/clients/android`](./direct-mode/clients/android) | [`backend-mode/clients/android`](./backend-mode/clients/android) | Not provided today; the RTC Mode demo path is Web-only |
+| **Flutter** | [`direct-mode/clients/flutter`](./direct-mode/clients/flutter) | [`backend-mode/clients/flutter`](./backend-mode/clients/flutter) | Not provided today; the RTC Mode demo path is Web-only |
+
+For LiveKit Agents specifically, see [`livekit-agent-quickstart`](./platform-integrations/livekit-agents-demo/livekit-agent-quickstart) and the [reference demo](./platform-integrations/livekit-agents-demo/livekit-agents-reference-demo).
 
 Transport options such as LiveKit, Agora, and your own WebSocket transport live inside the relevant integration docs. [`platform-integrations/livekit-room-demo`](./platform-integrations/livekit-room-demo) is the minimal LiveKit example for `@spatius/avatarkit-rtc` (the RTC Adapter) with `LiveKitProvider`: it validates token issuance, room connection, adapter init, avatar load, and mic publishing. Remote audio playback and motion rendering only happen when a producer publishes into the room — this demo has no agent or Backend Mode publisher. Not the full Backend Mode + RTC transport voice-agent demo.
 
@@ -71,25 +83,37 @@ Backend Mode servers are runtime servers. They own the ASR / LLM / TTS pipeline,
 
 ## Quick Start
 
-The fastest Web SDK path is the Direct Mode Web quickstart:
+The fastest Web SDK path is Direct Mode. The server holds the credentials and mints
+Session Tokens, so start it first:
 
 ```bash
 git clone https://github.com/spatius-ai/spatius-avatar-demo.git
-cd spatius-avatar-demo/direct-mode/clients/web/quickstart
+cd spatius-avatar-demo/direct-mode/servers/python
 
-# Set up environment variables
 cp .env.example .env
-# Fill VITE_SPATIUS_APP_ID, VITE_SPATIUS_AVATAR_ID, and VITE_SPATIUS_SESSION_TOKEN
+# Fill SPATIUS_API_KEY and SPATIUS_APP_ID. The realtime scene also needs the
+# LiveKit values; the sample-audio scene runs without them.
+
+uv run app.py
 ```
 
+Then the client, in a second terminal:
+
 ```bash
+cd spatius-avatar-demo/direct-mode/clients/web/reference/react
 pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:5173`.
 
-Keep **Sample audio** selected first, then click **Connect avatar** and **Send sample audio**. To test browser microphone conversation, fill one realtime provider section in `.env`, restart the dev server, and select **Realtime conversation** in the same UI.
+Pick a scene on the configuration page — **Sample audio** plays a bundled clip,
+**Realtime conversation** runs a voice agent on the server — then choose a character and
+press Start. Anything left blank in `.env` can be filled in on that page instead, which is
+what makes the demo reachable from a phone on the same network.
+
+The same client is provided for Vue, vanilla JS and Next.js alongside `react/`; see
+[`direct-mode/README.md`](./direct-mode/README.md).
 
 ## Prerequisites
 

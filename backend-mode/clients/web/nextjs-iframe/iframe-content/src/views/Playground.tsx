@@ -1,13 +1,21 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { DrivingServiceMode } from '@spatius/avatarkit'
+import type { AppConfig } from '../App'
 import { useAvatarManager } from '../hooks/useAvatarSDK'
 import CharacterList from '../components/CharacterList'
 import ControlPanel from '../components/ControlPanel'
+import StageControls from '../components/StageControls'
 import Toast from '../components/Toast'
 import { useToast } from '../hooks/useToast'
 
+interface Props {
+  mode: DrivingServiceMode
+  config: AppConfig
+}
+
 const MAX_AVATARS = 4
 
-export default function Playground() {
+export default function Playground({ mode, config }: Props) {
   const [multiMode, setMultiMode] = useState(false)
   const [loadingCharId, setLoadingCharId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -15,27 +23,31 @@ export default function Playground() {
   const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const {
-    avatars, activeUid, activeAvatar, activeController,
-    setActiveUid, loadAvatar, removeAvatar, removeAll,
+    avatars,
+    activeUid,
+    activeAvatar,
+    activeController,
+    setActiveUid,
+    loadAvatar,
+    removeAvatar,
+    removeAll,
   } = useAvatarManager(notify)
 
+  /**
+   * Interrupting only has to stop the local playback here: the audio is produced on
+   * the server, and it stops sending when the session tells it to — there is no
+   * local sender to cancel, which is what Direct Mode needs a handle for.
+   */
+  const handleInterrupt = useCallback(() => {
+    activeController?.interrupt()
+  }, [activeController])
+
+  // Update active-cell highlight when activeUid changes
   useEffect(() => {
     containerRefs.current.forEach((cell, uid) => {
       cell.classList.toggle('active-cell', uid === activeUid)
     })
   }, [activeUid])
-
-  const handleRemoveAvatar = useCallback((uid: string) => {
-    const cell = containerRefs.current.get(uid)
-    if (cell) cell.remove()
-    containerRefs.current.delete(uid)
-    removeAvatar(uid)
-    let idx = 1
-    containerRefs.current.forEach((c) => {
-      const badge = c.querySelector('.cell-badge')
-      if (badge) badge.textContent = String(idx++)
-    })
-  }, [removeAvatar])
 
   const handleCharacterSelect = useCallback(async (charId: string, charName: string) => {
     if (loadingCharId) return
@@ -61,27 +73,37 @@ export default function Playground() {
     // Slot index for this avatar
     const slotIndex = multiMode ? avatars.length + 1 : 1
 
+    // Index badge (top-left)
     const badge = document.createElement('div')
     badge.className = 'cell-badge'
     badge.textContent = String(slotIndex)
     cell.appendChild(badge)
 
+    // Close button (top-right), only in multi mode
     if (multiMode) {
       const closeBtn = document.createElement('button')
       closeBtn.className = 'cell-close'
-      closeBtn.textContent = '\u2715'
+      closeBtn.textContent = '✕'
       closeBtn.onclick = (e) => {
         e.stopPropagation()
+        // Find uid by cell ref
         for (const [uid, c] of containerRefs.current) {
-          if (c === cell) { handleRemoveAvatar(uid); break }
+          if (c === cell) {
+            handleRemoveAvatar(uid)
+            break
+          }
         }
       }
       cell.appendChild(closeBtn)
     }
 
+    // Click cell to select
     cell.onclick = () => {
       for (const [uid, c] of containerRefs.current) {
-        if (c === cell) { setActiveUid(uid); break }
+        if (c === cell) {
+          setActiveUid(uid)
+          break
+        }
       }
     }
 
@@ -108,7 +130,20 @@ export default function Playground() {
     } finally {
       setLoadingCharId(null)
     }
-  }, [loadingCharId, avatars.length, multiMode, removeAll, loadAvatar, setActiveUid, handleRemoveAvatar])
+  }, [loadingCharId, avatars.length, multiMode, removeAll, loadAvatar, setActiveUid, notify])
+
+  const handleRemoveAvatar = useCallback((uid: string) => {
+    const cell = containerRefs.current.get(uid)
+    if (cell) cell.remove()
+    containerRefs.current.delete(uid)
+    removeAvatar(uid)
+    // Re-number remaining badges
+    let idx = 1
+    containerRefs.current.forEach((c) => {
+      const badge = c.querySelector('.cell-badge')
+      if (badge) badge.textContent = String(idx++)
+    })
+  }, [removeAvatar])
 
   const handleMultiToggle = useCallback(() => {
     setMultiMode(prev => {
@@ -128,6 +163,7 @@ export default function Playground() {
 
   const gridClass = multiMode ? 'grid-4' : 'grid-1'
 
+  // Build slot selector for control panel in multi mode
   const avatarSlots = avatars.map((a, i) => ({
     uid: a.uid,
     index: i + 1,
@@ -141,22 +177,51 @@ export default function Playground() {
   return (
     <div className="playground">
       <div className="playground-left">
-        <CharacterList loadingId={loadingCharId} loadProgress={loadProgress} onSelect={handleCharacterSelect} />
+        <CharacterList
+          loadingId={loadingCharId}
+          loadProgress={loadProgress}
+          onSelect={handleCharacterSelect}
+          empty={avatars.length === 0 && !loadingCharId}
+        />
       </div>
+
       <div className="playground-center">
         <div className="center-header">
           <label className="multi-toggle">
-            <input type="checkbox" checked={multiMode} onChange={handleMultiToggle} />
+            <input
+              type="checkbox"
+              checked={multiMode}
+              onChange={handleMultiToggle}
+            />
             <span>Multi-avatar mode</span>
           </label>
-          {multiMode && <span className="avatar-count">{avatars.length}/{MAX_AVATARS}</span>}
+          {multiMode && (
+            <span className="avatar-count">{avatars.length}/{MAX_AVATARS}</span>
+          )}
         </div>
-        <div ref={canvasRef} className={`avatar-canvas ${gridClass}`}>
-          {avatars.length === 0 && !loadingCharId && (
-            <div className="canvas-empty">Select a character to get started</div>
+
+        <div className="canvas-stage">
+          <div ref={canvasRef} className={`avatar-canvas ${gridClass}`}>
+            {avatars.length === 0 && !loadingCharId && (
+              <div className="canvas-empty">
+                Select a character to get started
+              </div>
+            )}
+          </div>
+
+          {/* Over the avatar, since that is what they act on. Which pair shows
+              follows the conversation state; in idle neither does. */}
+          {activeAvatar && activeController && (
+            <StageControls
+              state={activeAvatar.conversationState}
+              onInterrupt={handleInterrupt}
+              onPause={() => activeController.pause()}
+              onResume={() => void activeController.resume()}
+            />
           )}
         </div>
       </div>
+
       <div className="playground-right">
         <ControlPanel
           activeAvatar={activeAvatar}
@@ -166,6 +231,8 @@ export default function Playground() {
           activeUid={activeUid}
           onSlotSelect={setActiveUid}
           onNotify={notify}
+          scene={config.scene}
+          language={config.language}
         />
       </div>
 

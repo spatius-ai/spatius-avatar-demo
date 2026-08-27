@@ -13,7 +13,9 @@ export default defineConfig({
   ],
   root: __dirname,
   server: {
-    port: 5173,
+    // Direct Mode owns 5170-5179, Backend 5180-5189, RTC 5190-5199. The three
+    // modes are meant to be run at the same time, and the ports used to collide.
+    port: 5180,
     open: true,
   },
   resolve: {

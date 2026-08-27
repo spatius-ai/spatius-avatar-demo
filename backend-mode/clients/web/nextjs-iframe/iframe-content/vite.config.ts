@@ -18,7 +18,7 @@ export default defineConfig({
   // origin for /src/main.tsx and gets a 404.
   base: '/iframe/',
   server: {
-    port: 5178,
+    port: 5188,
     open: false,
     cors: true,
   },

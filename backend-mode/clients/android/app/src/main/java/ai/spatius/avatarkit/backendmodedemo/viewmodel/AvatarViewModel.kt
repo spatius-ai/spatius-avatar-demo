@@ -56,6 +56,12 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var errorState: Throwable? by mutableStateOf(null)
         private set
+    /** Whether the avatar has actually been drawn — what takes the overlay down. */
+    var rendered: Boolean by mutableStateOf(false)
+        private set
+    /** Rolling render rate, from the SDK's frame rate monitor. */
+    var fps: Int? by mutableStateOf(null)
+        private set
 
     // --- Backend Mode state ---
     var backendConnected: Boolean by mutableStateOf(false)
@@ -68,10 +74,64 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
     var isPaused: Boolean by mutableStateOf(false)
         private set
 
+    // --- Realtime scene ---
+    /** Whether the agent has been asked for. */
+    var agentConnecting: Boolean by mutableStateOf(false)
+        private set
+    /**
+     * Whether the agent is ready to be spoken to.
+     *
+     * The server starts it asynchronously after `start_agent`, and audio pushed before
+     * `agent_ready` arrives is dropped — which presents as a microphone that records
+     * and is never answered.
+     */
+    var agentReady: Boolean by mutableStateOf(false)
+        private set
+    /** What has been said so far, as (role, text). */
+    var transcript: List<Pair<String, String>> by mutableStateOf(emptyList())
+        private set
+
+    /** Which language the realtime conversation runs in; set from the config screen. */
+    var language: String = "en"
+
+    /**
+     * Where the server is, as typed on the config screen.
+     *
+     * Not BuildConfig: that is fixed at build time and defaults to the emulator's
+     * 10.0.2.2, which a real device cannot reach — the address has to be the one the
+     * user actually entered, or every connection fails with nothing to change.
+     */
+    var baseUrl: String = BuildConfig.BACKEND_MODE_URL
+
+    /** The clips the server can play, as reported by `/api/config`. */
+    var clips: List<ai.spatius.avatarkit.backendmodedemo.ui.screens.ServerClip>
+        by mutableStateOf(emptyList())
+    /** Which clip is mid-flight, so its button can show it. */
+    var playingClip: String? by mutableStateOf(null)
+        private set
+
+    /**
+     * Whether `start_agent` has been sent on this connection.
+     *
+     * Sent once, and only by the realtime scene: an agent costs a model session, and
+     * someone who only wants the pre-recorded clips should not pay for one by opening
+     * the app.
+     */
+    private var agentStarted = false
+
     private var backendWebSocket: WebSocket? = null
     private var micRecordJob: Job? = null
     private var audioRecord: AudioRecord? = null
-    private val backendTurnMap = mutableMapOf<String, String>()
+    /**
+     * The id `yieldAudioData` handed back, which the frames for the same reply need.
+     *
+     * One id, not a map keyed by the server's `turnId`: the SDK mints a fresh
+     * conversation id as a reply goes on, and the latest is the one the frames belong
+     * to. Keeping the first — which a map plus "only if absent" does — leaves every
+     * later batch addressed to an id the SDK has moved past, and the clip never
+     * finishes playing. The Web and iOS clients both track the single latest id.
+     */
+    private var conversationId: String? = null
 
     private val controller get() = avatarView?.controller
 
@@ -97,19 +157,31 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
 
     fun loadAvatar(avatarId: String) {
         if (avatarId == currentAvatarId && avatarView != null) return
-        cleanupAvatar()
+        // The view is reused rather than torn down: it is what the next model is drawn
+        // into, and dropping it here would leave the stage empty with nothing to
+        // recreate it. Only the session behind it is reset.
+        val view = avatarView
+        backendDisconnect()
+        connectionState = ConnectionState.Disconnected
+        conversationState = ConversationState.Idle
+        errorState = null
         currentAvatarId = avatarId
+        rendered = false
+        fps = null
         isLoading = true
         loadProgress = 0f
         viewModelScope.launch {
             try {
-                AvatarManager.load(avatarId, onProgress = { progress ->
+                val avatar = AvatarManager.load(avatarId, onProgress = { progress ->
                     when (progress) {
                         is AvatarManager.LoadProgress.Downloading -> loadProgress = progress.progress
                         is AvatarManager.LoadProgress.Completed -> loadProgress = 1f
                         is AvatarManager.LoadProgress.Failed -> errorState = progress.error
                     }
                 })
+                view?.init(avatar, viewModelScope)
+                setupController()
+                backendConnect()
             } catch (error: Throwable) {
                 errorState = error
                 currentAvatarId = ""
@@ -121,10 +193,53 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onAvatarViewCreated(view: AvatarView) {
         avatarView = view
+        // Nothing to draw yet: the id arrives from the server, and the caller loads it
+        // through loadAvatar once this view exists.
+        if (currentAvatarId.isBlank()) return
         viewModelScope.launch {
             val avatar = AvatarManager.load(currentAvatarId)
             view.init(avatar, viewModelScope)
             setupController()
+            // Nothing to ask the user here: this is a WebSocket to the demo's own
+            // server, not a session that costs anything. The iOS client connects at the
+            // same point, and neither has a Start button — the server owns the Motion
+            // Server connection, so there is nothing for one to start.
+            backendConnect()
+        }
+    }
+
+    /**
+     * Load the avatar the server nominated, into the view that already exists.
+     *
+     * Not loadAvatar: that one tears the view down first, which is right when swapping
+     * characters and wrong here — the view was created a moment ago and is what the
+     * model is about to be drawn into.
+     */
+    fun loadInitialAvatar(avatarId: String) {
+        if (avatarId.isBlank() || currentAvatarId.isNotBlank()) return
+        val view = avatarView ?: return
+        currentAvatarId = avatarId
+        rendered = false
+        isLoading = true
+        loadProgress = 0f
+        viewModelScope.launch {
+            try {
+                val avatar = AvatarManager.load(avatarId) { progress ->
+                    when (progress) {
+                        is AvatarManager.LoadProgress.Downloading -> loadProgress = progress.progress
+                        is AvatarManager.LoadProgress.Completed -> loadProgress = 1f
+                        is AvatarManager.LoadProgress.Failed -> errorState = progress.error
+                    }
+                }
+                view.init(avatar, viewModelScope)
+                setupController()
+                backendConnect()
+            } catch (error: Throwable) {
+                errorState = error
+                currentAvatarId = ""
+            } finally {
+                isLoading = false
+            }
         }
     }
 
@@ -133,16 +248,23 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
             onConnectionState = { state -> connectionState = state }
             onConversationState = { state -> conversationState = state }
             onError = { error -> errorState = Exception(error.message) }
+            // Off by default and free while off; the status bar is what asks for it.
+            frameRateMonitorEnabled = true
+            onFrameRateInfo = { info -> fps = info.fps.toInt() }
         }
+        avatarView?.onFirstRendering = { rendered = true }
     }
 
     fun pause() { controller?.pause(); isPaused = true }
     fun resume() { controller?.resume(); isPaused = false }
 
+    /**
+     * Cut off what the avatar is saying.
+     *
+     * The microphone stays open: interrupting means "stop talking", not "I am done
+     * talking" — closing it here made every interruption end the turn as well.
+     */
     fun interrupt() {
-        backendStopMic()
-        backendWebSocket?.send(JSONObject().apply { put("type", "interrupt") }.toString())
-        backendTurnMap.clear()
         controller?.interrupt()
     }
 
@@ -160,36 +282,44 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
             }
             "avatar_audio" -> {
                 val audioB64 = obj.optString("audio", "")
-                val turnId = obj.optString("turnId", "").ifEmpty { return }
                 val isLast = obj.optBoolean("isLast", false)
                 val audioBytes = if (audioB64.isNotEmpty()) Base64.decode(audioB64) else ByteArray(0)
+                // Queued on the same single-threaded scope as the frames below, so the
+                // id is always set before the frames that need it arrive — the two
+                // messages are independent on the wire and can land in either order.
                 viewModelScope.launch {
-                    val cid = controller?.yieldAudioData(audioBytes, isLast)
-                    if (cid != null && !backendTurnMap.containsKey(turnId)) {
-                        backendTurnMap[turnId] = cid
-                    }
+                    conversationId = controller?.yieldAudioData(audioBytes, isLast) ?: conversationId
+                    // The button showing "…" goes back to the clip's name once the
+                    // server has sent the last of it.
+                    if (isLast) playingClip = null
                 }
             }
             "avatar_frames" -> {
-                val turnId = obj.optString("turnId", "").ifEmpty { return }
                 val framesArr = obj.optJSONArray("frames") ?: return
                 val frames = (0 until framesArr.length()).mapNotNull { i ->
                     framesArr.optString(i)?.takeIf { it.isNotEmpty() }?.let { Base64.decode(it) }
                 }
-                val isLast = obj.optBoolean("isLast", false)
-                val cid = backendTurnMap[turnId]
-                if (cid != null && frames.isNotEmpty()) {
-                    viewModelScope.launch { controller?.yieldFramesData(frames, cid) }
-                }
-                if (isLast) {
-                    backendTurnMap.remove(turnId)
+                if (frames.isEmpty()) return
+                viewModelScope.launch {
+                    val cid = conversationId ?: return@launch
+                    controller?.yieldFramesData(frames, cid)
                 }
             }
+            "agent_ready" -> {
+                agentConnecting = false
+                agentReady = true
+            }
+            "transcript" -> {
+                val role = obj.optString("role", "user")
+                val said = obj.optString("text", "")
+                if (said.isNotEmpty()) transcript = transcript + (role to said)
+            }
             "interrupt" -> {
-                backendTurnMap.clear()
+                conversationId = null
                 viewModelScope.launch { controller?.interrupt() }
             }
             "error" -> {
+                playingClip = null
                 val errMsg = obj.optString("message", "Unknown error")
                 viewModelScope.launch { errorState = Exception(errMsg) }
             }
@@ -201,7 +331,7 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
         backendConnecting = true
         errorState = null
 
-        val wsUrl = BuildConfig.BACKEND_MODE_URL.let { url ->
+        val wsUrl = baseUrl.let { url ->
             if (url.startsWith("ws://") || url.startsWith("wss://")) url
             else url.replace("http://", "ws://").replace("https://", "wss://")
         }.let { base ->
@@ -218,6 +348,7 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
                     errorState = t
                     backendConnecting = false
                     backendConnected = false
+                    resetAgent()
                     backendWebSocket = null
                     backendMicActive = false
                 }
@@ -226,13 +357,21 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
                 viewModelScope.launch {
                     backendWebSocket = null
                     backendConnected = false
+                    resetAgent()
                     backendConnecting = false
                     backendMicActive = false
-                    backendTurnMap.clear()
+                    conversationId = null
                 }
             }
         })
         backendWebSocket = ws
+    }
+
+    /** Forget the agent. It belongs to the socket, so a new connection needs a new one. */
+    private fun resetAgent() {
+        agentStarted = false
+        agentConnecting = false
+        agentReady = false
     }
 
     fun backendDisconnect() {
@@ -240,8 +379,9 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
         backendWebSocket?.close(1000, "User disconnected")
         backendWebSocket = null
         backendConnected = false
+        resetAgent()
         backendConnecting = false
-        backendTurnMap.clear()
+        conversationId = null
     }
 
     fun hasRecordPermission(): Boolean {
@@ -252,8 +392,25 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     @android.annotation.SuppressLint("MissingPermission")
+    /**
+     * Ask the server to start the conversational agent, once per connection.
+     *
+     * Only the realtime scene calls this: an agent costs a model session, and a clip
+     * needs none. `agent_ready` comes back when it can actually be spoken to.
+     */
+    private fun ensureAgent() {
+        if (agentStarted) return
+        val ws = backendWebSocket ?: return
+        agentStarted = true
+        agentConnecting = true
+        ws.send(JSONObject().apply { put("type", "start_agent"); put("language", language) }.toString())
+    }
+
     fun backendStartMic() {
         if (backendMicActive) return
+        // The server drops audio that arrives before the agent exists, so the mic
+        // starting is what brings it up.
+        ensureAgent()
         if (!hasRecordPermission()) return
 
         val sampleRate = 16000
@@ -310,11 +467,28 @@ class AvatarViewModel(application: Application) : AndroidViewModel(application) 
         backendWebSocket?.send(JSONObject().apply { put("type", "mic_end") }.toString())
     }
 
+    /**
+     * Ask the server to stream one of its clips into the avatar.
+     *
+     * The clips live on the server and never pass through this app: what arrives back
+     * is the same audio-plus-motion pair the realtime scene produces, so the rendering
+     * path is identical either way.
+     */
+    fun playSample(clip: String) {
+        if (!backendConnected) backendConnect()
+        playingClip = clip
+        backendWebSocket?.send(
+            JSONObject().apply { put("type", "play_sample"); put("clip", clip) }.toString()
+        )
+    }
+
     fun backendSendText(text: String) {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         if (!backendConnected) backendConnect()
-        backendWebSocket?.send(JSONObject().apply { put("type", "text_query"); put("text", trimmed) }.toString())
+        // A typed line goes to the same agent the microphone talks to.
+        ensureAgent()
+        backendWebSocket?.send(JSONObject().apply { put("type", "text"); put("text", trimmed) }.toString())
         backendTextInput = ""
     }
 

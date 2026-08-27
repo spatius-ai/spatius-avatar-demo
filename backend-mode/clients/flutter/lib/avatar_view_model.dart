@@ -24,7 +24,53 @@ class AvatarViewModel extends ChangeNotifier {
   ak.AvatarController? _controller;
   WebSocketChannel? _wsChannel;
   StreamSubscription? _wsSubscription;
-  final Map<String, String> _backendTurnMap = {};
+  /// The id `yieldAudioData` handed back, which the frames for the same reply need.
+  ///
+  /// One id, not a map keyed by the server's `turnId`: the SDK mints a fresh id as a
+  /// reply goes on, and the latest is the one the frames belong to. Keeping the first
+  /// leaves every later batch addressed to an id the SDK has moved past, and the clip
+  /// never finishes playing.
+  String? _conversationId;
+
+  /// Serialises what reaches the SDK.
+  ///
+  /// `yieldAudioData` and `yieldAnimations` are asynchronous, and the messages arrive
+  /// on the socket's own thread faster than the SDK drains them. Firing each without
+  /// waiting lets them land out of order — stutter and static on the audio, and a
+  /// conversation id overwritten by a stale one. Chaining through a single future
+  /// keeps the order the server sent.
+  ///
+  /// Unlike Direct Mode, the chain is not optional here: the id the frames need is
+  /// what `yieldAudioData` returns, so the frames genuinely have to wait for the
+  /// audio message that precedes them.
+  Future<void> _sdkQueue = Future<void>.value();
+
+  /// Whether the agent has been asked for, and whether it can be spoken to yet.
+  ///
+  /// The server starts it asynchronously after `start_agent`, and audio pushed before
+  /// `agent_ready` is dropped — a microphone that records and is never answered.
+  bool agentConnecting = false;
+  bool agentReady = false;
+
+  /// Whether `start_agent` has been sent on this connection. Sent once, and only by
+  /// the realtime scene: an agent costs a model session and a clip needs none.
+  bool _agentStarted = false;
+
+  /// What has been said so far, as (role, text).
+  List<(String, String)> transcript = [];
+
+  /// The clips the server can play, and which one is mid-flight.
+  List<({String name, String clip})> clips = [];
+  String? playingClip;
+
+  /// Which language the realtime conversation runs in; set from the config screen.
+  String language = 'en';
+
+  /// Where the server is, as typed on the config screen.
+  ///
+  /// Not the compile-time constant: that defaults to localhost, which a real device
+  /// cannot reach — the address has to be the one the user actually entered.
+  String baseUrl = Config.backendModeURL;
 
   // Microphone
   final AudioRecorder _recorder = AudioRecorder();
@@ -62,17 +108,18 @@ class AvatarViewModel extends ChangeNotifier {
 
   void resume() => _controller?.resume();
 
+  /// Cut off what the avatar is saying.
+  ///
+  /// The microphone stays open: interrupting means "stop talking", not "I am done
+  /// talking" — closing it here made every interruption end the turn as well.
   void interrupt() {
-    backendStopMic();
-    _sendWsMessage({'type': 'interrupt'});
-    _backendTurnMap.clear();
     _controller?.interrupt();
   }
 
   // --- Backend Mode: WebSocket ---
 
   Uri get _backendWsUrl {
-    final base = Config.backendModeURL
+    final base = baseUrl
         .replaceFirst('http://', 'ws://')
         .replaceFirst('https://', 'wss://');
     return Uri.parse('$base/ws/agent');
@@ -106,6 +153,7 @@ class AvatarViewModel extends ChangeNotifier {
   }
 
   void backendDisconnect() {
+    _resetAgent();
     backendStopMic();
     _wsSubscription?.cancel();
     _wsSubscription = null;
@@ -113,17 +161,18 @@ class AvatarViewModel extends ChangeNotifier {
     _wsChannel = null;
     backendConnected = false;
     backendConnecting = false;
-    _backendTurnMap.clear();
+    _conversationId = null;
     notifyListeners();
   }
 
   void _onWsDisconnected() {
+    _resetAgent();
     backendConnected = false;
     backendConnecting = false;
     backendMicActive = false;
     _wsChannel = null;
     _wsSubscription = null;
-    _backendTurnMap.clear();
+    _conversationId = null;
     notifyListeners();
   }
 
@@ -136,52 +185,75 @@ class AvatarViewModel extends ChangeNotifier {
     final type = json['type'] as String?;
     if (type == null) return;
 
+    // `ready` is handled before the controller check on purpose: it arrives while the
+    // avatar may still be loading, and dropping it left the session connected in name
+    // only — every control disabled, and the server never told which avatar to drive.
+    // Only the frames actually need a controller.
+    if (type == 'ready') {
+      backendConnected = true;
+      backendConnecting = false;
+      notifyListeners();
+      _sendWsMessage({'type': 'set_avatar', 'avatarId': avatar?.id ?? ''});
+      return;
+    }
+
+    if (type == 'agent_ready') {
+      agentConnecting = false;
+      agentReady = true;
+      notifyListeners();
+      return;
+    }
+
+    if (type == 'transcript') {
+      final said = json['text'] as String? ?? '';
+      if (said.isNotEmpty) {
+        transcript = [...transcript, (json['role'] as String? ?? 'user', said)];
+        notifyListeners();
+      }
+      return;
+    }
+
     final controller = _controller;
     if (controller == null) return;
 
     switch (type) {
-      case 'ready':
-        backendConnected = true;
-        backendConnecting = false;
-        notifyListeners();
-        _sendWsMessage({
-          'type': 'set_avatar',
-          'avatarId': avatar?.id ?? '',
-        });
 
       case 'avatar_audio':
-        final turnId = json['turnId'] as String?;
-        if (turnId == null) return;
         final audioB64 = json['audio'] as String? ?? '';
         final audioData =
             audioB64.isEmpty ? Uint8List(0) : base64Decode(audioB64);
         final isLast = json['isLast'] as bool? ?? false;
-        controller.yieldAudioData(audioData, end: isLast).then((cid) {
-          _backendTurnMap.putIfAbsent(turnId, () => cid);
+        _sdkQueue = _sdkQueue.then((_) async {
+          _conversationId = await controller.yieldAudioData(audioData, end: isLast);
+          if (isLast) {
+            playingClip = null;
+            notifyListeners();
+          }
         });
 
       case 'avatar_frames':
-        final turnId = json['turnId'] as String?;
         final framesArr = json['frames'] as List?;
-        if (turnId == null || framesArr == null) return;
+        if (framesArr == null) return;
         final frames = framesArr
             .cast<String>()
             .map((f) => base64Decode(f))
             .toList();
-        final isLast = json['isLast'] as bool? ?? false;
-        final cid = _backendTurnMap[turnId];
-        if (cid != null && frames.isNotEmpty) {
-          controller.yieldAnimations(frames, conversationID: cid);
-        }
-        if (isLast) {
-          _backendTurnMap.remove(turnId);
-        }
+        // Queued behind the audio: the id the frames need is what that call returns,
+        // and the two messages are independent on the wire.
+        _sdkQueue = _sdkQueue.then((_) async {
+          final cid = _conversationId;
+          if (cid != null && frames.isNotEmpty) {
+            await controller.yieldAnimations(frames, conversationID: cid);
+          }
+        });
 
       case 'interrupt':
-        _backendTurnMap.clear();
+        _conversationId = null;
+        playingClip = null;
         controller.interrupt();
 
       case 'error':
+        playingClip = null;
         errorMessage = json['message'] as String? ?? 'Unknown error';
         notifyListeners();
     }
@@ -189,7 +261,37 @@ class AvatarViewModel extends ChangeNotifier {
 
   // --- Backend Mode: Microphone ---
 
+  /// Ask the server to start the conversational agent, once per connection.
+  void _ensureAgent() {
+    if (_agentStarted || !backendConnected) return;
+    _agentStarted = true;
+    agentConnecting = true;
+    notifyListeners();
+    _sendWsMessage({'type': 'start_agent', 'language': language});
+  }
+
+  /// Forget the agent. It belongs to the socket, so a new connection needs a new one.
+  void _resetAgent() {
+    _agentStarted = false;
+    agentConnecting = false;
+    agentReady = false;
+  }
+
+  /// Ask the server to stream one of its clips into the avatar.
+  ///
+  /// The clips live on the server and never pass through this app: what arrives back
+  /// is the same audio-plus-motion pair the realtime scene produces.
+  void playSample(String clip) {
+    if (!backendConnected) backendConnect();
+    playingClip = clip;
+    notifyListeners();
+    _sendWsMessage({'type': 'play_sample', 'clip': clip});
+  }
+
   Future<void> backendStartMic() async {
+    // The server drops audio that arrives before the agent exists, so the mic
+    // starting is what brings it up.
+    _ensureAgent();
     if (!backendConnected || backendMicActive) return;
 
     final hasPermission = await _recorder.hasPermission();
@@ -207,6 +309,13 @@ class AvatarViewModel extends ChangeNotifier {
         autoGain: true,
         echoCancel: true,
         noiseSuppress: true,
+        // VOICE_COMMUNICATION, not the default MIC: `echoCancel` alone is a software
+        // flag, and on Android the hardware canceller only engages on this source.
+        // Without it the avatar's own voice comes back in through the microphone,
+        // reaches the agent as user speech, and it answers itself.
+        androidConfig: AndroidRecordConfig(
+          audioSource: AndroidAudioSource.voiceCommunication,
+        ),
       ),
     );
 
@@ -233,6 +342,8 @@ class AvatarViewModel extends ChangeNotifier {
   // --- Backend Mode: Text ---
 
   void backendSendText(String text) {
+    // A typed line goes to the same agent the microphone talks to.
+    _ensureAgent();
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
@@ -242,7 +353,7 @@ class AvatarViewModel extends ChangeNotifier {
 
     // If already connected, send immediately; otherwise wait
     if (backendConnected && _wsChannel != null) {
-      _sendWsMessage({'type': 'text_query', 'text': trimmed});
+      _sendWsMessage({'type': 'text', 'text': trimmed});
     } else {
       // Poll for connection (up to 3s)
       _waitAndSendText(trimmed);
@@ -255,7 +366,7 @@ class AvatarViewModel extends ChangeNotifier {
       await Future.delayed(const Duration(milliseconds: 100));
     }
     if (backendConnected && _wsChannel != null) {
-      _sendWsMessage({'type': 'text_query', 'text': text});
+      _sendWsMessage({'type': 'text', 'text': text});
     }
   }
 

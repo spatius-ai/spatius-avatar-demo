@@ -1,13 +1,21 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { DrivingServiceMode } from '@spatius/avatarkit'
+import type { AppConfig } from '../App'
 import { useAvatarManager } from '../hooks/useAvatarSDK'
 import CharacterList from '../components/CharacterList'
 import ControlPanel from '../components/ControlPanel'
+import StageControls from '../components/StageControls'
 import Toast from '../components/Toast'
 import { useToast } from '../hooks/useToast'
 
+interface Props {
+  mode: DrivingServiceMode
+  config: AppConfig
+}
+
 const MAX_AVATARS = 4
 
-export default function Playground() {
+export default function Playground({ mode, config }: Props) {
   const [multiMode, setMultiMode] = useState(false)
   const [loadingCharId, setLoadingCharId] = useState<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -24,6 +32,15 @@ export default function Playground() {
     removeAvatar,
     removeAll,
   } = useAvatarManager(notify)
+
+  /**
+   * Interrupting only has to stop the local playback here: the audio is produced on
+   * the server, and it stops sending when the session tells it to — there is no
+   * local sender to cancel, which is what Direct Mode needs a handle for.
+   */
+  const handleInterrupt = useCallback(() => {
+    activeController?.interrupt()
+  }, [activeController])
 
   // Update active-cell highlight when activeUid changes
   useEffect(() => {
@@ -113,7 +130,7 @@ export default function Playground() {
     } finally {
       setLoadingCharId(null)
     }
-  }, [loadingCharId, avatars.length, multiMode, removeAll, loadAvatar, setActiveUid])
+  }, [loadingCharId, avatars.length, multiMode, removeAll, loadAvatar, setActiveUid, notify])
 
   const handleRemoveAvatar = useCallback((uid: string) => {
     const cell = containerRefs.current.get(uid)
@@ -164,6 +181,7 @@ export default function Playground() {
           loadingId={loadingCharId}
           loadProgress={loadProgress}
           onSelect={handleCharacterSelect}
+          empty={avatars.length === 0 && !loadingCharId}
         />
       </div>
 
@@ -182,11 +200,24 @@ export default function Playground() {
           )}
         </div>
 
-        <div ref={canvasRef} className={`avatar-canvas ${gridClass}`}>
-          {avatars.length === 0 && !loadingCharId && (
-            <div className="canvas-empty">
-              Select a character to get started
-            </div>
+        <div className="canvas-stage">
+          <div ref={canvasRef} className={`avatar-canvas ${gridClass}`}>
+            {avatars.length === 0 && !loadingCharId && (
+              <div className="canvas-empty">
+                Select a character to get started
+              </div>
+            )}
+          </div>
+
+          {/* Over the avatar, since that is what they act on. Which pair shows
+              follows the conversation state; in idle neither does. */}
+          {activeAvatar && activeController && (
+            <StageControls
+              state={activeAvatar.conversationState}
+              onInterrupt={handleInterrupt}
+              onPause={() => activeController.pause()}
+              onResume={() => void activeController.resume()}
+            />
           )}
         </div>
       </div>
@@ -200,6 +231,8 @@ export default function Playground() {
           activeUid={activeUid}
           onSlotSelect={setActiveUid}
           onNotify={notify}
+          scene={config.scene}
+          language={config.language}
         />
       </div>
 
