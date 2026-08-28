@@ -1,26 +1,13 @@
-# RTC Adapter — LiveKit example (Web client)
+# Moved
 
-## Purpose
+This demo has moved to **[spatius-integration-demo](https://github.com/spatius-ai/spatius-integration-demo)**.
 
-Web client for the LiveKit Room example. Fetches a token from the matching token server, joins the LiveKit room via `@spatius/avatarkit-rtc` (the [RTC Adapter](https://docs.spatius.ai/sdk-reference/web-sdk/rtc-adapter)) + `LiveKitProvider`, loads the avatar, and starts mic publishing. Remote audio playback and motion-driven rendering only happen if a remote producer is publishing into the room — this demo alone has no audio or motion publisher.
-
-## Run
+The same directory lives at [`platform-integrations/livekit-room-demo/clients/web`](https://github.com/spatius-ai/spatius-integration-demo/tree/main/platform-integrations/livekit-room-demo/clients/web) there.
 
 ```bash
-cp .env.example .env
-pnpm install
-pnpm dev
+git clone https://github.com/spatius-ai/spatius-integration-demo.git
+cd spatius-integration-demo/platform-integrations/livekit-room-demo/clients/web
 ```
 
-Default URL: `http://localhost:3003`
-
-## Backend Dependency
-
-Run `../../servers/python` in parallel (default `http://localhost:8081`).
-
-## References
-
-- Spatius App ID: https://app.spatius.ai/apps
-- Spatius Avatar ID (test avatars): https://app.spatius.ai/avatars/library
-- Session token guide: https://docs.spatius.ai/api-reference/auth
-- LiveKit cloud: https://cloud.livekit.io/
+Nothing here is maintained any more — this directory is kept only so existing links
+resolve to something that says where to go.

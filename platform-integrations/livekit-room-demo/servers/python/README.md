@@ -1,24 +1,13 @@
-# LiveKit Room example — Token Server (Python)
+# Moved
 
-## Purpose
+This demo has moved to **[spatius-integration-demo](https://github.com/spatius-ai/spatius-integration-demo)**.
 
-Issues LiveKit access tokens and creates the room if missing. Paired with the Web client to validate the RTC Adapter's LiveKit wiring. No agent dispatch; no audio/motion producer in this sample.
-
-## Run
+The same directory lives at [`platform-integrations/livekit-room-demo/servers/python`](https://github.com/spatius-ai/spatius-integration-demo/tree/main/platform-integrations/livekit-room-demo/servers/python) there.
 
 ```bash
-cp .env.example .env
-uv sync
-uv run token_server.py
+git clone https://github.com/spatius-ai/spatius-integration-demo.git
+cd spatius-integration-demo/platform-integrations/livekit-room-demo/servers/python
 ```
 
-Default: `http://localhost:8081`
-
-## API
-
-- `GET /health`
-- `POST /token`
-
-## Reference
-
-- LiveKit cloud: https://cloud.livekit.io/
+Nothing here is maintained any more — this directory is kept only so existing links
+resolve to something that says where to go.
