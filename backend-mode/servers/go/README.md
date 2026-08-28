@@ -1,10 +1,13 @@
-# Backend Mode Backend (Go)
+# Moved
 
-This repository does not provide a full Backend Mode implementation in Go.
+This demo has moved to **[spatius-integration-demo](https://github.com/spatius-ai/spatius-integration-demo)**.
 
-Reason: Backend Mode includes `ASR -> LLM -> TTS + Server SDK bridge`, and maintaining full parity across languages creates heavy duplication.
+The same directory lives at [`backend-mode/servers/go`](https://github.com/spatius-ai/spatius-integration-demo/tree/main/backend-mode/servers/go) there.
 
-Recommendation:
+```bash
+git clone https://github.com/spatius-ai/spatius-integration-demo.git
+cd spatius-integration-demo/backend-mode/servers/go
+```
 
-- Use `../python` for production or full verification.
-- If Go is required, start from thin capabilities (token/proxy) and extend as needed.
+Nothing here is maintained any more — this directory is kept only so existing links
+resolve to something that says where to go.

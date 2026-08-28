@@ -1,38 +1,13 @@
-# Direct Mode Token Server (Node.js)
+# Moved
 
-## Run
+This demo has moved to **[spatius-integration-demo](https://github.com/spatius-ai/spatius-integration-demo)**.
 
-```bash
-cp .env.example .env
-pnpm install
-pnpm dev
-```
-
-Production:
+The same directory lives at [`direct-mode/servers/nodejs`](https://github.com/spatius-ai/spatius-integration-demo/tree/main/direct-mode/servers/nodejs) there.
 
 ```bash
-pnpm build
-pnpm start
+git clone https://github.com/spatius-ai/spatius-integration-demo.git
+cd spatius-integration-demo/direct-mode/servers/nodejs
 ```
 
-Default: `http://localhost:8090`
-
-## API
-
-- `GET /health`
-- `POST /session-token`
-  - body: `{ "appId": "..." }` (optional)
-
-## Validation Guardrails
-
-`POST /session-token` returns `500` if:
-
-- `.env` is missing
-- `SPATIUS_API_KEY` or `SPATIUS_APP_ID` is missing
-- either value is still placeholder text
-
-## References
-
-- App ID / API Key: https://app.spatius.ai/apps
-- Test avatars: https://app.spatius.ai/avatars/library
-- Session token guide: https://docs.spatius.ai/api-reference/auth
+Nothing here is maintained any more — this directory is kept only so existing links
+resolve to something that says where to go.

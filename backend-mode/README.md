@@ -1,114 +1,13 @@
-# Backend Mode
+# Moved
 
-[![@spatius/avatarkit](https://img.shields.io/npm/v/%40spatius%2Favatarkit?label=%40spatius%2Favatarkit)](https://www.npmjs.com/package/@spatius/avatarkit)
-[![avatarkit (Python)](https://img.shields.io/badge/avatarkit-python-blue)](https://pypi.org/project/spatius/)
+This demo has moved to **[spatius-integration-demo](https://github.com/spatius-ai/spatius-integration-demo)**.
 
-## When to use Backend Mode
-
-Backend Mode is for scenarios where **the backend handles the entire conversation pipeline** — ASR, LLM, TTS, and the Server SDK connection to Motion Server. Clients are thin: they capture audio input, send it to the backend via WebSocket, and render the avatar with the returned encoded audio and motion messages.
-
-**Choose Backend Mode when:**
-- You want a turnkey server-side pipeline
-- You want to keep all API keys and AI logic on the server
-- You need to support thin clients (mobile, embedded) that only capture input and render
-- You want centralized control over the conversation flow
-
-**Choose [Direct Mode](../direct-mode/) when:**
-- You want full client-side control over the conversation pipeline
-- You already have your own ASR/LLM/TTS infrastructure
-- You want to integrate AvatarKit into an existing app
-
-## Architecture
-
-```mermaid
-flowchart LR
-    A["Client"] -->|mic audio / text| B["Backend Server"]
-    B -->|ASR → LLM → TTS| C["AI Services"]
-    B -->|Audio| D["Server SDK"]
-    D -->|Motion Server| F["Spatius Motion Server"]
-    F -->|Motion Data| D
-    D -->|Encoded audio + motion messages| B
-    B -->|WebSocket: encoded audio + motion messages| A
-    A -->|yieldAudioData / yieldFramesData| E["AvatarKit Client SDK"]
-    E -->|Render| A
-```
-
-## Prerequisites
-
-- Python 3.10+, [uv](https://docs.astral.sh/uv/)
-- Node.js 18+, pnpm
-- [Spatius credentials](https://app.spatius.ai/apps) (App ID + API Key)
-
-## Quick Start
+The same directory lives at [`backend-mode`](https://github.com/spatius-ai/spatius-integration-demo/tree/main/backend-mode) there.
 
 ```bash
-# 1. Configure backend
-cd servers/python
-cp .env.example .env
-# Edit .env with your API keys
-
-# 2. Start everything
-cd ../..
-./start.sh
+git clone https://github.com/spatius-ai/spatius-integration-demo.git
+cd spatius-integration-demo/backend-mode
 ```
 
-The start script will:
-- Detect your LAN IP
-- Auto-configure Android `local.properties` and iOS `Config.swift` with the backend URL
-- Start the backend and frontend
-
-Then open `http://localhost:5173` for the React web client, or open Android Studio / Xcode and build & run — no manual IP configuration needed.
-
-For mobile-only development (no Web frontend):
-
-```bash
-./start.sh --no-frontend
-```
-
-## Web Clients
-
-The React, Vue, vanilla, and Next.js clients connect to the backend WebSocket at `ws://localhost:8765/ws/agent` and fetch App ID / region from `/api/config`.
-
-```bash
-cd clients/web/react   # or vue/ vanilla/ nextjs-direct/ nextjs-iframe/
-cp .env.example .env
-pnpm install
-pnpm dev
-```
-
-## Android / iOS / Flutter
-
-Android and iOS clients connect to the backend WebSocket. The `start.sh` script auto-configures the backend URL.
-
-- **Android**: Open `clients/android/` in Android Studio and run
-- **iOS**: Open `clients/ios/AvatarDemo.xcodeproj` in Xcode and run
-- **Flutter**: `cd clients/flutter && flutter pub get && flutter run`
-
-## Project Structure
-
-```text
-backend-mode/
-├── start.sh              # One-command startup
-├── clients/
-│   ├── web/
-│   │   ├── react/
-│   │   ├── vue/
-│   │   ├── vanilla/
-│   │   ├── nextjs-direct/
-│   │   └── nextjs-iframe/
-│   ├── android/          # Kotlin + Compose
-│   ├── ios/              # SwiftUI
-│   └── flutter/          # Flutter (iOS + Android)
-├── servers/
-│   ├── python/           # WebSocket server + AI pipeline
-│   ├── nodejs/           # Placeholder / reference notes
-│   └── go/               # Placeholder / reference notes
-└── README.md
-```
-
-## References
-
-- [AvatarKit Backend Mode Guide](https://docs.spatius.ai/backend-mode/overview)
-- [Get API Keys](https://app.spatius.ai/apps)
-- [Test Avatars](https://app.spatius.ai/avatars/library)
-- [Regions & Endpoints](https://docs.spatius.ai/api-reference/regions)
+Nothing here is maintained any more — this directory is kept only so existing links
+resolve to something that says where to go.
